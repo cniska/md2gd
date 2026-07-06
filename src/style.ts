@@ -116,10 +116,3 @@ export const blockquoteParagraphStyle: ParagraphStyleSpec = spec({
   spaceAbove: pt(6),
   spaceBelow: pt(10),
 });
-
-/** Horizontal rule: an empty paragraph carrying a bottom border. */
-export const horizontalRuleParagraphStyle: ParagraphStyleSpec = spec({
-  borderBottom: { color: BORDER_GREY, width: pt(1), padding: pt(0), dashStyle: "SOLID" },
-  spaceAbove: pt(6),
-  spaceBelow: pt(6),
-});

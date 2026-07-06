@@ -188,12 +188,11 @@ describe("convert other block types", () => {
     expect(insertedText(reqs)).toBe("quoted line\n");
   });
 
-  test("a horizontal rule is an empty paragraph carrying a bottom border", () => {
+  test("a horizontal rule is ignored, contributing no paragraph", () => {
     const reqs = convert(parseMarkdown("above\n\n---\n\nbelow\n"));
-    const rule = paragraphStyles(reqs).find((s) => s.updateParagraphStyle.paragraphStyle.borderBottom);
-    expect(rule).toBeDefined();
-    // The whole document text: the rule contributes only its newline.
-    expect(insertedText(reqs)).toBe("above\n\nbelow\n");
+    expect(paragraphStyles(reqs).some((s) => s.updateParagraphStyle.paragraphStyle.borderBottom)).toBe(false);
+    expect(paragraphStyles(reqs)).toHaveLength(2);
+    expect(insertedText(reqs)).toBe("above\nbelow\n");
   });
 });
 

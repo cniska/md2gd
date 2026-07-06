@@ -8,7 +8,6 @@ import {
   codeBlockParagraphStyle,
   codeBlockTextStyle,
   headingParagraphStyle,
-  horizontalRuleParagraphStyle,
   normalParagraphStyle,
   type ParagraphStyleSpec,
 } from "./style";
@@ -75,7 +74,9 @@ function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
     case "blockquote":
       return appendBlockquote(node, cursor, ctx);
     case "thematicBreak":
-      return emitParagraph("", [], cursor, ctx, horizontalRuleParagraphStyle);
+      // Ignored: a bordered rule looks poor in Docs, and headings already carry
+      // space above, so a thematic break contributes nothing.
+      return cursor;
     case "table":
       // Tables cannot be emitted as absolute-indexed requests: their cell indices
       // only exist after the empty table is inserted and read back. The document
