@@ -24,20 +24,28 @@ interface Context {
 }
 
 /**
- * Convert an mdast tree into a sequence of Google Docs `batchUpdate` requests.
- *
- * Text is inserted first at a single advancing cursor; styling requests follow
- * and reference absolute indices in the resulting document. Offsets are computed
- * from JS string length, which is measured in UTF-16 code units — matching the
- * Docs API's own indexing, so emoji (surrogate pairs) count correctly.
- *
- * Pure and offline: produces request objects, touches no network.
+ * Convert a whole mdast tree into Google Docs `batchUpdate` requests, starting
+ * at the body's first index. Assumes no tables (see `planDocument`); a table
+ * reaching here fails loud.
  */
 export function convert(root: Root): DocRequest[] {
-  const ctx: Context = { requests: [], bullets: [] };
-  let cursor = BODY_START_INDEX;
+  return convertNodes(root.children, BODY_START_INDEX).requests;
+}
 
-  for (const node of root.children) {
+/**
+ * Convert a run of block nodes into `batchUpdate` requests placed from
+ * `startIndex`, returning the index just past the inserted content so the
+ * caller can continue after it (e.g. following a table).
+ *
+ * Text is inserted at an advancing cursor; styling requests reference absolute
+ * indices. Offsets come from JS string length — UTF-16 code units, matching the
+ * Docs API — so emoji (surrogate pairs) count correctly. Pure and offline.
+ */
+export function convertNodes(nodes: RootContent[], startIndex: number): { requests: DocRequest[]; endIndex: number } {
+  const ctx: Context = { requests: [], bullets: [] };
+  let cursor = startIndex;
+
+  for (const node of nodes) {
     cursor = appendBlock(node, cursor, ctx);
   }
 
@@ -50,7 +58,7 @@ export function convert(root: Root): DocRequest[] {
     });
   }
 
-  return ctx.requests;
+  return { requests: ctx.requests, endIndex: cursor };
 }
 
 function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
