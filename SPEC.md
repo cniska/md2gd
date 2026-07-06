@@ -132,6 +132,7 @@ Styling should be centralized/configurable enough that the default look can be a
 - **AU-5** — Provide a documented way to reset/revoke local credentials (e.g. a `logout`/`reset-auth` command or deleting a documented file).
 - **AU-6** — The tool must document the one-time Google Cloud project / OAuth client setup the user must perform, in clear step-by-step form (see §8). The docs **must** call out: (a) **publish the OAuth consent screen to "Production"** — leaving it in "Testing" causes Google to expire refresh tokens after 7 days, silently breaking AU-4; unverified-Production is fine for a personal tool, and (b) staying on `drive.file` keeps the app out of sensitive-scope verification entirely.
 - **AU-7** — No document content or credentials may be sent to any third-party service other than Google's own APIs. All processing happens locally or within the user's Google account.
+- **AU-8** — The loopback consent callback must be protected against authorization-code injection: a random `state` is verified on return and PKCE (S256) is used. Denied consent and a timeout must both terminate `init` cleanly rather than hang.
 
 ---
 
