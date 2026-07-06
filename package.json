@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "bun run src/cli.ts",
-    "format": "bunx biome format --write .",
+    "format": "bunx biome check --write .",
     "lint": "bunx biome check --error-on-warnings .",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
