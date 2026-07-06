@@ -1,4 +1,4 @@
-import { type Dimension, type NamedStyleType, type ParagraphStyle, pt } from "./docs";
+import { type Dimension, type NamedStyleType, type ParagraphStyle, pt, type TextStyle } from "./docs";
 
 /**
  * Central style table — the single source of truth for the "clean sensible
@@ -55,4 +55,22 @@ export function headingParagraphStyle(depth: number): ParagraphStyleSpec {
     spaceAbove: spacing.above,
     spaceBelow: spacing.below,
   });
+}
+
+/** Monospace family used for code; a Google-Docs-available mono font. */
+const MONO_FONT = "Roboto Mono";
+/** Light grey behind inline code, to set it apart from prose. */
+const CODE_BACKGROUND = { color: { rgbColor: { red: 0.95, green: 0.95, blue: 0.95 } } };
+/** Conventional link blue. */
+const LINK_BLUE = { color: { rgbColor: { red: 0.06, green: 0.45, blue: 0.87 } } };
+
+/** Inline code / code spans: monospace with a subtle background. */
+export const codeTextStyle: TextStyle = {
+  weightedFontFamily: { fontFamily: MONO_FONT },
+  backgroundColor: CODE_BACKGROUND,
+};
+
+/** Hyperlink appearance: the link plus conventional coloured + underlined text. */
+export function linkTextStyle(url: string): TextStyle {
+  return { link: { url }, underline: true, foregroundColor: LINK_BLUE };
 }

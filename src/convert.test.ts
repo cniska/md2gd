@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { convert } from "./convert";
-import type { InsertTextRequest, UpdateParagraphStyleRequest } from "./docs";
+import type { InsertTextRequest, UpdateParagraphStyleRequest, UpdateTextStyleRequest } from "./docs";
 import { parseMarkdown } from "./parse";
 
 function insertedText(reqs: ReturnType<typeof convert>): string {
@@ -12,6 +12,10 @@ function insertedText(reqs: ReturnType<typeof convert>): string {
 
 function paragraphStyles(reqs: ReturnType<typeof convert>): UpdateParagraphStyleRequest[] {
   return reqs.filter((r): r is UpdateParagraphStyleRequest => "updateParagraphStyle" in r);
+}
+
+function textStyles(reqs: ReturnType<typeof convert>): UpdateTextStyleRequest[] {
+  return reqs.filter((r): r is UpdateTextStyleRequest => "updateTextStyle" in r);
 }
 
 describe("convert paragraphs and headings", () => {
@@ -58,5 +62,48 @@ describe("convert paragraphs and headings", () => {
     const reqs = convert(parseMarkdown("🟠 High\n"));
     const [style] = paragraphStyles(reqs);
     expect(style?.updateParagraphStyle.range).toEqual({ startIndex: 1, endIndex: 9 });
+  });
+});
+
+describe("convert inline formatting", () => {
+  test("bold text becomes a bold text-style run over just the bold span", () => {
+    // "a **bold** c\n" -> "a bold c\n"; "bold" is at indices 3..7.
+    const reqs = convert(parseMarkdown("a **bold** c\n"));
+    expect(insertedText(reqs)).toBe("a bold c\n");
+    const bold = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.bold);
+    expect(bold).toBeDefined();
+    if (!bold) throw new Error("no bold run");
+    expect(bold.updateTextStyle.range).toEqual({ startIndex: 3, endIndex: 7 });
+    expect(bold.updateTextStyle.fields).toContain("bold");
+  });
+
+  test("inline code keeps markdown-significant characters literal and monospace", () => {
+    const reqs = convert(parseMarkdown("key `sk_test_` here\n"));
+    // The underscores are not emphasis: the literal token survives verbatim.
+    expect(insertedText(reqs)).toBe("key sk_test_ here\n");
+    const code = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.weightedFontFamily);
+    expect(code).toBeDefined();
+    if (!code) throw new Error("no code run");
+    expect(code.updateTextStyle.range).toEqual({ startIndex: 5, endIndex: 13 });
+    expect(code.updateTextStyle.textStyle.bold).toBeUndefined();
+    expect(code.updateTextStyle.textStyle.italic).toBeUndefined();
+  });
+
+  test("a link produces a link run carrying the url", () => {
+    const reqs = convert(parseMarkdown("see [docs](https://example.com/x) now\n"));
+    expect(insertedText(reqs)).toBe("see docs now\n");
+    const link = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.link);
+    expect(link?.updateTextStyle.textStyle.link?.url).toBe("https://example.com/x");
+    expect(link?.updateTextStyle.range).toEqual({ startIndex: 5, endIndex: 9 });
+  });
+
+  test("stacked lines join into one paragraph via a line break, not a new paragraph", () => {
+    const reqs = convert(parseMarkdown("**Date:** July 5\n**Class:** Confidential\n"));
+    // One paragraph => exactly one paragraph-style request.
+    expect(paragraphStyles(reqs)).toHaveLength(1);
+    // The two lines are joined by a vertical-tab line break, not "\n".
+    const text = insertedText(reqs);
+    expect(text).toContain(String.fromCharCode(0x0b));
+    expect(text).toBe(`Date: July 5${String.fromCharCode(0x0b)}Class: Confidential\n`);
   });
 });

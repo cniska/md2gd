@@ -42,6 +42,16 @@ export interface WeightedFontFamily {
   weight?: number;
 }
 
+export interface RgbColor {
+  red?: number;
+  green?: number;
+  blue?: number;
+}
+
+export interface OptionalColor {
+  color?: { rgbColor: RgbColor };
+}
+
 export interface TextStyle {
   bold?: boolean;
   italic?: boolean;
@@ -49,6 +59,8 @@ export interface TextStyle {
   strikethrough?: boolean;
   link?: { url: string };
   weightedFontFamily?: WeightedFontFamily;
+  foregroundColor?: OptionalColor;
+  backgroundColor?: OptionalColor;
 }
 
 export interface InsertTextRequest {
