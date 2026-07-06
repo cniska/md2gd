@@ -57,6 +57,12 @@ export function headingParagraphStyle(depth: number): ParagraphStyleSpec {
   });
 }
 
+/** Default body/heading font applied to all inserted text. */
+export const DEFAULT_FONT = "Montserrat";
+
+/** Base font run applied to every paragraph and cell; specific runs override it. */
+export const bodyFontTextStyle: TextStyle = { weightedFontFamily: { fontFamily: DEFAULT_FONT } };
+
 /** Monospace family used for code; a Google-Docs-available mono font. */
 const MONO_FONT = "Roboto Mono";
 /** Light grey behind inline code, to set it apart from prose. */

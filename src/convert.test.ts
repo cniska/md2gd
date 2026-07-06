@@ -90,9 +90,12 @@ describe("convert inline formatting", () => {
     const reqs = convert(parseMarkdown("key `sk_test_` here\n"));
     // The underscores are not emphasis: the literal token survives verbatim.
     expect(insertedText(reqs)).toBe("key sk_test_ here\n");
-    const code = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.weightedFontFamily);
+    // The code run is distinguished by its background shade (the base body font
+    // run also carries weightedFontFamily).
+    const code = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.backgroundColor);
     expect(code).toBeDefined();
     if (!code) throw new Error("no code run");
+    expect(code.updateTextStyle.textStyle.weightedFontFamily).toBeDefined();
     expect(code.updateTextStyle.range).toEqual({ startIndex: 5, endIndex: 13 });
     expect(code.updateTextStyle.textStyle.bold).toBeUndefined();
     expect(code.updateTextStyle.textStyle.italic).toBeUndefined();
@@ -248,5 +251,13 @@ describe("convert list nesting limitation", () => {
     const bs = bullets(reqs);
     expect(bs).toHaveLength(1);
     expect(bs[0]?.createParagraphBullets.bulletPreset).toBe("NUMBERED_DECIMAL_ALPHA_ROMAN");
+  });
+});
+
+describe("convert default font", () => {
+  test("body text is set in the default font (Montserrat)", () => {
+    const reqs = convert(parseMarkdown("Just some text.\n"));
+    const font = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.weightedFontFamily);
+    expect(font?.updateTextStyle.textStyle.weightedFontFamily?.fontFamily).toBe("Montserrat");
   });
 });

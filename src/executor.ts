@@ -1,7 +1,7 @@
 import { convertNodes } from "./convert";
 import { BODY_START_INDEX, type DocRequest, type DocumentResource, fieldMask, type TableCellStyle } from "./docs";
 import type { Segment } from "./plan";
-import { CELL_PADDING, HEADER_SHADING } from "./style";
+import { bodyFontTextStyle, CELL_PADDING, HEADER_SHADING } from "./style";
 import type { TablePlan } from "./table";
 
 /**
@@ -149,7 +149,16 @@ function cellFillRequests(plan: TablePlan, cellIndices: number[][]): DocRequest[
       const index = cellIndices[row]?.[col];
       if (!cell || index === undefined || cell.text.length === 0) continue;
 
-      const requests: DocRequest[] = [{ insertText: { text: cell.text, location: { index } } }];
+      const requests: DocRequest[] = [
+        { insertText: { text: cell.text, location: { index } } },
+        {
+          updateTextStyle: {
+            textStyle: bodyFontTextStyle,
+            fields: fieldMask(bodyFontTextStyle),
+            range: { startIndex: index, endIndex: index + cell.text.length },
+          },
+        },
+      ];
       for (const run of cell.runs) {
         requests.push({
           updateTextStyle: {

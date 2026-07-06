@@ -4,6 +4,7 @@ import { BODY_START_INDEX, type BulletPreset, type DocRequest, fieldMask } from 
 import { inlineRuns, LINE_BREAK } from "./inline";
 import {
   blockquoteParagraphStyle,
+  bodyFontTextStyle,
   codeBlockParagraphStyle,
   codeBlockTextStyle,
   headingParagraphStyle,
@@ -192,7 +193,6 @@ function emitParagraph(
   const end = cursor + text.length;
 
   ctx.requests.push({ insertText: { text, location: { index: start } } });
-  ctx.requests.push(...inlineRequests);
   ctx.requests.push({
     updateParagraphStyle: {
       paragraphStyle: spec.paragraphStyle,
@@ -200,6 +200,18 @@ function emitParagraph(
       range: { startIndex: start, endIndex: end },
     },
   });
+  // Apply the base font over the text, then the specific runs, so run styles
+  // (bold, monospace code, ...) win in their sub-ranges.
+  if (body.length > 0) {
+    ctx.requests.push({
+      updateTextStyle: {
+        textStyle: bodyFontTextStyle,
+        fields: fieldMask(bodyFontTextStyle),
+        range: { startIndex: start, endIndex: start + body.length },
+      },
+    });
+  }
+  ctx.requests.push(...inlineRequests);
 
   return end;
 }
