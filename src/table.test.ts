@@ -29,6 +29,16 @@ describe("buildTablePlan", () => {
     for (const w of plan.columnWidths) expect(w.unit).toBe("PT");
   });
 
+  test("a short column beside a very long one is floored, not collapsed", () => {
+    const md = ["| Sev | Finding |", "|---|---|", `| 🔴 Critical | ${"x".repeat(300)} |`, ""].join("\n");
+    const [sev, finding] = firstTable(md).columnWidths;
+    if (!sev || !finding) throw new Error("expected two widths");
+    // The severity column must stay readable (~0.7in), not shrink to a sliver.
+    expect(sev.magnitude).toBeGreaterThanOrEqual(50);
+    expect(finding.magnitude).toBeGreaterThan(sev.magnitude);
+    expect(sev.magnitude + finding.magnitude).toBeLessThanOrEqual(468);
+  });
+
   test("a longer-content column gets a wider column", () => {
     const md = ["| K | Description |", "|---|---|", "| a | this cell has much longer content than the key |", ""].join(
       "\n",

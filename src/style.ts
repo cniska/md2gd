@@ -82,6 +82,9 @@ export function linkTextStyle(url: string): TextStyle {
  */
 export const TABLE_CONTENT_WIDTH_PT = 468;
 
+/** Floor so a short-content column (e.g. a status column) never collapses. */
+export const MIN_COLUMN_WIDTH_PT = 54;
+
 /** Internal padding on every table cell, so text never touches the borders. */
 export const CELL_PADDING: Dimension = pt(5);
 
