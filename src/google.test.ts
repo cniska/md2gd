@@ -29,31 +29,31 @@ describe("documentUrl", () => {
 });
 
 describe("GoogleDocsClient.createDocument", () => {
-  test("creates the doc, creates the folder when absent, and moves the doc into it", async () => {
+  test("creates the folder when absent, then creates the doc inside it", async () => {
     const { calls, fetchFn } = recorder([
-      { documentId: "doc9" }, // create doc
       { files: [] }, // folder search: none
       { id: "folder1" }, // folder create
-      { id: "doc9" }, // move
+      { id: "doc9" }, // doc create
     ]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
 
     const result = await client.createDocument("My Title");
     expect(result.documentId).toBe("doc9");
-    expect(calls[0]).toMatchObject({ method: "POST", body: { title: "My Title" } });
-    expect(calls[1]?.method).toBe("GET"); // folder search
-    expect(calls[2]).toMatchObject({ method: "POST", body: { mimeType: "application/vnd.google-apps.folder" } });
-    expect(calls[3]?.method).toBe("PATCH");
-    expect(calls[3]?.url).toContain("addParents=folder1");
+    expect(calls[0]?.method).toBe("GET"); // folder search
+    expect(calls[1]).toMatchObject({ method: "POST", body: { mimeType: "application/vnd.google-apps.folder" } });
+    expect(calls[2]).toMatchObject({
+      method: "POST",
+      body: { name: "My Title", mimeType: "application/vnd.google-apps.document", parents: ["folder1"] },
+    });
   });
 
   test("reuses an existing folder without creating a new one", async () => {
-    const { calls, fetchFn } = recorder([{ documentId: "d" }, { files: [{ id: "existing" }] }, { id: "d" }]);
+    const { calls, fetchFn } = recorder([{ files: [{ id: "existing" }] }, { id: "d" }]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     await client.createDocument("T");
-    // No folder-create POST: create-doc, folder-search, move.
+    // Folder search (GET) then doc create (POST) — no folder-create POST.
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
-    expect(calls.at(-1)?.url).toContain("addParents=existing");
+    expect(calls.at(-1)?.body).toMatchObject({ parents: ["existing"] });
   });
 });
 

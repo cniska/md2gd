@@ -6,6 +6,7 @@ import type { FetchFn } from "./oauth";
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
+const DOC_MIME = "application/vnd.google-apps.document";
 
 export interface GoogleClientOptions {
   getToken: () => Promise<string>;
@@ -31,11 +32,16 @@ export class GoogleDocsClient implements DocsClient {
   }
 
   async createDocument(title: string): Promise<{ documentId: string }> {
-    const doc = (await this.json("POST", DOCS_API, { title })) as { documentId: string };
+    // Create the doc directly inside md2gd's folder via Drive. A Drive file's id
+    // is the Docs document id, so this avoids the add-parent-to-rooted-file move
+    // (which fails under Drive's single-parent model). drive.file covers it.
     const folderId = await this.ensureFolder();
-    // Move the new doc into md2gd's own folder (drive.file scope covers files we create).
-    await this.json("PATCH", `${DRIVE_API}/${doc.documentId}?addParents=${folderId}&fields=id`);
-    return { documentId: doc.documentId };
+    const doc = (await this.json("POST", `${DRIVE_API}?fields=id`, {
+      name: title,
+      mimeType: DOC_MIME,
+      parents: [folderId],
+    })) as { id: string };
+    return { documentId: doc.id };
   }
 
   async batchUpdate(documentId: string, requests: DocRequest[]): Promise<void> {
