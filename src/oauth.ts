@@ -28,17 +28,45 @@ export function parseClientSecret(json: string): ClientSecret {
   return { clientId: parsed.installed.client_id, clientSecret: parsed.installed.client_secret };
 }
 
-/** Build the consent URL; `access_type=offline` + `prompt=consent` ensure a refresh token. */
-export function buildAuthUrl(clientId: string, redirectUri: string): string {
-  const params = new URLSearchParams({
+export interface AuthUrlParams {
+  /** Opaque anti-forgery value echoed back on the redirect. */
+  state: string;
+  /** PKCE S256 code challenge. */
+  codeChallenge: string;
+}
+
+/**
+ * Build the consent URL. `access_type=offline` + `prompt=consent` ensure a
+ * refresh token; `state` and PKCE (`code_challenge`) protect the loopback
+ * callback against auth-code injection.
+ */
+export function buildAuthUrl(clientId: string, redirectUri: string, params: AuthUrlParams): string {
+  const query = new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
     scope: SCOPES.join(" "),
     access_type: "offline",
     prompt: "consent",
+    state: params.state,
+    code_challenge: params.codeChallenge,
+    code_challenge_method: "S256",
   });
-  return `${AUTH_ENDPOINT}?${params.toString()}`;
+  return `${AUTH_ENDPOINT}?${query.toString()}`;
+}
+
+/** A URL-safe random token (base64url), used for `state` and PKCE verifiers. */
+export function randomToken(bytes = 32): string {
+  const buffer = new Uint8Array(bytes);
+  crypto.getRandomValues(buffer);
+  return Buffer.from(buffer).toString("base64url");
+}
+
+/** Create a PKCE verifier and its S256 challenge. */
+export async function createPkce(): Promise<{ verifier: string; challenge: string }> {
+  const verifier = randomToken(32);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return { verifier, challenge: Buffer.from(new Uint8Array(digest)).toString("base64url") };
 }
 
 async function postToken(fetchFn: FetchFn, body: URLSearchParams): Promise<z.infer<typeof TokenResponseSchema>> {
@@ -47,7 +75,13 @@ async function postToken(fetchFn: FetchFn, body: URLSearchParams): Promise<z.inf
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: body.toString(),
   });
-  if (!res.ok) throw new Error(`md2gd: token request failed (${res.status})`);
+  if (!res.ok) {
+    const detail = await res.text();
+    if (detail.includes("invalid_grant")) {
+      throw new Error("md2gd: stored authorization is no longer valid; run `md2gd init` again");
+    }
+    throw new Error(`md2gd: token request failed (${res.status})`);
+  }
   return TokenResponseSchema.parse(await res.json());
 }
 
@@ -56,6 +90,7 @@ export async function exchangeCode(
   client: ClientSecret,
   code: string,
   redirectUri: string,
+  codeVerifier: string,
   now: number,
   fetchFn: FetchFn = fetch,
 ): Promise<StoredToken> {
@@ -65,6 +100,7 @@ export async function exchangeCode(
     client_secret: client.clientSecret,
     redirect_uri: redirectUri,
     grant_type: "authorization_code",
+    code_verifier: codeVerifier,
   });
   const res = await postToken(fetchFn, body);
   if (!res.refresh_token) throw new Error("md2gd: no refresh token returned; re-run init");
@@ -85,7 +121,12 @@ export async function refreshToken(
     grant_type: "refresh_token",
   });
   const res = await postToken(fetchFn, body);
-  return { accessToken: res.access_token, refreshToken: refresh, expiryDate: now + res.expires_in * 1000 };
+  // Google may rotate the refresh token; keep the new one if returned.
+  return {
+    accessToken: res.access_token,
+    refreshToken: res.refresh_token ?? refresh,
+    expiryDate: now + res.expires_in * 1000,
+  };
 }
 
 /**

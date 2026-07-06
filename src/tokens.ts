@@ -1,4 +1,4 @@
-import { chmodSync, mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import { TOKEN_PATH } from "./config";
 
@@ -21,11 +21,11 @@ function dirOf(path: string): string {
   return path.slice(0, path.lastIndexOf("/")) || ".";
 }
 
-/** Persist the token in a user-scoped file with owner-only permissions (AU-2). */
-export async function saveToken(token: StoredToken, path: string = TOKEN_PATH): Promise<void> {
+/** Persist the token in a user-scoped file created with owner-only permissions. */
+export function saveToken(token: StoredToken, path: string = TOKEN_PATH): void {
   mkdirSync(dirOf(path), { recursive: true, mode: 0o700 });
-  await Bun.write(path, JSON.stringify(token, null, 2));
-  chmodSync(path, 0o600);
+  // Owner-only perms applied at creation — no brief world-readable window.
+  writeFileSync(path, JSON.stringify(token, null, 2), { mode: 0o600 });
 }
 
 /** Load the cached token, or null if none is stored yet. */
