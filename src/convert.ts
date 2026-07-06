@@ -1,10 +1,8 @@
 import type { List, ListItem, PhrasingContent, Root, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
-import { BODY_START_INDEX, type BulletPreset, type DocRequest, type ParagraphStyle, type TextStyle } from "./docs";
-import { codeTextStyle, headingParagraphStyle, linkTextStyle, normalParagraphStyle } from "./style";
-
-/** A line break within the same paragraph (vertical tab), as opposed to "\n". */
-const LINE_BREAK = String.fromCharCode(0x0b);
+import { BODY_START_INDEX, type BulletPreset, type DocRequest, type ParagraphStyle } from "./docs";
+import { inlineRuns, styleFields } from "./inline";
+import { headingParagraphStyle, normalParagraphStyle } from "./style";
 
 interface ParagraphSpec {
   paragraphStyle: ParagraphStyle;
@@ -108,8 +106,16 @@ function appendParagraph(
   spec: ParagraphSpec,
 ): number {
   const tabs = "\t".repeat(indent);
-  const walked = walkInline(inline, cursor + tabs.length, {});
-  return emitParagraph(`${tabs}${walked.text}`, walked.requests, cursor, ctx, spec);
+  const base = cursor + tabs.length;
+  const content = inlineRuns(inline);
+  const styleRequests: DocRequest[] = content.runs.map((run) => ({
+    updateTextStyle: {
+      textStyle: run.style,
+      fields: styleFields(run.style),
+      range: { startIndex: base + run.start, endIndex: base + run.end },
+    },
+  }));
+  return emitParagraph(`${tabs}${content.text}`, styleRequests, cursor, ctx, spec);
 }
 
 function appendRaw(value: string, cursor: number, ctx: Context, indent: number, spec: ParagraphSpec): number {
@@ -138,82 +144,4 @@ function emitParagraph(
   });
 
   return end;
-}
-
-interface InlineResult {
-  text: string;
-  requests: DocRequest[];
-}
-
-/**
- * Walk phrasing (inline) content, accumulating the plain text and one
- * `updateTextStyle` request per styled run. `active` carries styles inherited
- * from enclosing nodes (bold, italic, link, ...) so nesting composes.
- */
-function walkInline(nodes: PhrasingContent[], startIndex: number, active: TextStyle): InlineResult {
-  let index = startIndex;
-  let text = "";
-  const requests: DocRequest[] = [];
-
-  const emitLeaf = (value: string, style: TextStyle): void => {
-    if (value.length > 0 && hasStyle(style)) {
-      requests.push({
-        updateTextStyle: {
-          textStyle: style,
-          fields: styleFields(style),
-          range: { startIndex: index, endIndex: index + value.length },
-        },
-      });
-    }
-    text += value;
-    index += value.length;
-  };
-
-  const descend = (children: PhrasingContent[], style: TextStyle): void => {
-    const nested = walkInline(children, index, style);
-    text += nested.text;
-    index += nested.text.length;
-    requests.push(...nested.requests);
-  };
-
-  for (const node of nodes) {
-    switch (node.type) {
-      case "text":
-        emitLeaf(node.value, active);
-        break;
-      case "inlineCode":
-        // The node's value is already literal, so markdown-significant
-        // characters inside a code span are never re-interpreted.
-        emitLeaf(node.value, { ...active, ...codeTextStyle });
-        break;
-      case "strong":
-        descend(node.children, { ...active, bold: true });
-        break;
-      case "emphasis":
-        descend(node.children, { ...active, italic: true });
-        break;
-      case "delete":
-        descend(node.children, { ...active, strikethrough: true });
-        break;
-      case "link":
-        descend(node.children, { ...active, ...linkTextStyle(node.url) });
-        break;
-      case "break":
-        emitLeaf(LINE_BREAK, active);
-        break;
-      default:
-        emitLeaf(mdastToString(node), active);
-        break;
-    }
-  }
-
-  return { text, requests };
-}
-
-function hasStyle(style: TextStyle): boolean {
-  return Object.keys(style).length > 0;
-}
-
-function styleFields(style: TextStyle): string {
-  return Object.keys(style).join(",");
 }

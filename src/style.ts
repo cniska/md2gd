@@ -74,3 +74,16 @@ export const codeTextStyle: TextStyle = {
 export function linkTextStyle(url: string): TextStyle {
   return { link: { url }, underline: true, foregroundColor: LINK_BLUE };
 }
+
+/**
+ * Usable content width for a table, in points: US Letter (612pt) minus one-inch
+ * (72pt) left and right margins. Column widths are distributed within this so
+ * tables never overflow the page.
+ */
+export const TABLE_CONTENT_WIDTH_PT = 468;
+
+/** Internal padding on every table cell, so text never touches the borders. */
+export const CELL_PADDING: Dimension = pt(5);
+
+/** Subtle grey fill distinguishing a table's header row. */
+export const HEADER_SHADING = { color: { rgbColor: { red: 0.9, green: 0.9, blue: 0.9 } } };
