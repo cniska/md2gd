@@ -1,8 +1,15 @@
-import type { List, ListItem, PhrasingContent, Root, RootContent } from "mdast";
+import type { Blockquote, Code, List, ListItem, PhrasingContent, Root, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
 import { BODY_START_INDEX, type BulletPreset, type DocRequest, type ParagraphStyle } from "./docs";
-import { inlineRuns, styleFields } from "./inline";
-import { headingParagraphStyle, normalParagraphStyle } from "./style";
+import { inlineRuns, LINE_BREAK, styleFields } from "./inline";
+import {
+  blockquoteParagraphStyle,
+  codeBlockParagraphStyle,
+  codeBlockTextStyle,
+  headingParagraphStyle,
+  horizontalRuleParagraphStyle,
+  normalParagraphStyle,
+} from "./style";
 
 interface ParagraphSpec {
   paragraphStyle: ParagraphStyle;
@@ -58,9 +65,45 @@ function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
       return appendParagraph(node.children, cursor, ctx, 0, headingParagraphStyle(node.depth));
     case "paragraph":
       return appendParagraph(node.children, cursor, ctx, 0, normalParagraphStyle());
+    case "code":
+      return appendCode(node, cursor, ctx);
+    case "blockquote":
+      return appendBlockquote(node, cursor, ctx);
+    case "thematicBreak":
+      return emitParagraph("", [], cursor, ctx, horizontalRuleParagraphStyle);
     default:
       return appendRaw(mdastToString(node), cursor, ctx, 0, normalParagraphStyle());
   }
+}
+
+function appendCode(node: Code, cursor: number, ctx: Context): number {
+  // Internal newlines become in-paragraph line breaks so the whole block reads
+  // as one shaded region rather than many separately-shaded paragraphs.
+  const body = node.value.replaceAll("\n", LINE_BREAK);
+  const styleRequests: DocRequest[] =
+    body.length > 0
+      ? [
+          {
+            updateTextStyle: {
+              textStyle: codeBlockTextStyle,
+              fields: styleFields(codeBlockTextStyle),
+              range: { startIndex: cursor, endIndex: cursor + body.length },
+            },
+          },
+        ]
+      : [];
+  return emitParagraph(body, styleRequests, cursor, ctx, codeBlockParagraphStyle);
+}
+
+function appendBlockquote(node: Blockquote, cursor: number, ctx: Context): number {
+  for (const child of node.children) {
+    if (child.type === "paragraph") {
+      cursor = appendParagraph(child.children, cursor, ctx, 0, blockquoteParagraphStyle);
+    } else {
+      cursor = appendRaw(mdastToString(child), cursor, ctx, 0, blockquoteParagraphStyle);
+    }
+  }
+  return cursor;
 }
 
 function appendList(list: List, depth: number, cursor: number, ctx: Context): number {

@@ -87,3 +87,30 @@ export const CELL_PADDING: Dimension = pt(5);
 
 /** Subtle grey fill distinguishing a table's header row. */
 export const HEADER_SHADING = { color: { rgbColor: { red: 0.9, green: 0.9, blue: 0.9 } } };
+
+const BORDER_GREY = { color: { rgbColor: { red: 0.7, green: 0.7, blue: 0.7 } } };
+
+/** Fenced/indented code block: shaded background, set apart from prose. */
+export const codeBlockParagraphStyle: ParagraphStyleSpec = spec({
+  shading: { backgroundColor: { color: { rgbColor: { red: 0.96, green: 0.96, blue: 0.96 } } } },
+  spaceAbove: pt(6),
+  spaceBelow: pt(10),
+});
+
+/** Monospace text style for whole code blocks (no per-run background). */
+export const codeBlockTextStyle: TextStyle = { weightedFontFamily: { fontFamily: MONO_FONT } };
+
+/** Blockquote: indented with an accent bar on the left. */
+export const blockquoteParagraphStyle: ParagraphStyleSpec = spec({
+  indentStart: pt(24),
+  borderLeft: { color: BORDER_GREY, width: pt(3), padding: pt(8), dashStyle: "SOLID" },
+  spaceAbove: pt(6),
+  spaceBelow: pt(10),
+});
+
+/** Horizontal rule: an empty paragraph carrying a bottom border. */
+export const horizontalRuleParagraphStyle: ParagraphStyleSpec = spec({
+  borderBottom: { color: BORDER_GREY, width: pt(1), padding: pt(0), dashStyle: "SOLID" },
+  spaceAbove: pt(6),
+  spaceBelow: pt(6),
+});

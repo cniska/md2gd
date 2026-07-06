@@ -164,3 +164,32 @@ describe("convert lists", () => {
     expect(lastTwo.every((r) => "createParagraphBullets" in r)).toBe(true);
   });
 });
+
+describe("convert other block types", () => {
+  test("a fenced code block is monospace, shaded, and keeps its lines in one block", () => {
+    const reqs = convert(parseMarkdown("```\nconst x = 1\nmore\n```\n"));
+    // Internal newline becomes an in-paragraph line break, not a new paragraph.
+    expect(insertedText(reqs)).toBe(`const x = 1${String.fromCharCode(0x0b)}more\n`);
+    const mono = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.weightedFontFamily);
+    expect(mono).toBeDefined();
+    const shaded = paragraphStyles(reqs).find((s) => s.updateParagraphStyle.paragraphStyle.shading);
+    expect(shaded).toBeDefined();
+  });
+
+  test("a blockquote is indented with a left accent border", () => {
+    const reqs = convert(parseMarkdown("> quoted line\n"));
+    const style = paragraphStyles(reqs).find((s) => s.updateParagraphStyle.paragraphStyle.borderLeft);
+    expect(style).toBeDefined();
+    if (!style) throw new Error("no blockquote style");
+    expect(style.updateParagraphStyle.paragraphStyle.indentStart?.magnitude).toBeGreaterThan(0);
+    expect(insertedText(reqs)).toBe("quoted line\n");
+  });
+
+  test("a horizontal rule is an empty paragraph carrying a bottom border", () => {
+    const reqs = convert(parseMarkdown("above\n\n---\n\nbelow\n"));
+    const rule = paragraphStyles(reqs).find((s) => s.updateParagraphStyle.paragraphStyle.borderBottom);
+    expect(rule).toBeDefined();
+    // The whole document text: the rule contributes only its newline.
+    expect(insertedText(reqs)).toBe("above\n\nbelow\n");
+  });
+});

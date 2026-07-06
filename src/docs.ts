@@ -30,11 +30,28 @@ export interface Range {
   endIndex: number;
 }
 
+export interface Shading {
+  backgroundColor: OptionalColor;
+}
+
+export type DashStyle = "SOLID";
+
+export interface ParagraphBorder {
+  color: OptionalColor;
+  width: Dimension;
+  padding: Dimension;
+  dashStyle: DashStyle;
+}
+
 export interface ParagraphStyle {
   namedStyleType?: NamedStyleType;
   lineSpacing?: number;
   spaceAbove?: Dimension;
   spaceBelow?: Dimension;
+  indentStart?: Dimension;
+  shading?: Shading;
+  borderLeft?: ParagraphBorder;
+  borderBottom?: ParagraphBorder;
 }
 
 export interface WeightedFontFamily {
