@@ -56,7 +56,7 @@ The tool must faithfully render the following, mapping each to the closest nativ
 - **FR-14** — Tables, including header rows, with clean styling (see §3). Tables are the highest-frequency rich element in the user's docs and must render cleanly, preserving cell content including inline formatting and emoji.
 - **FR-15** — Fenced and indented code blocks, in a monospace font with visual distinction from body text (e.g. shaded background or bordered block). Language hints need not produce syntax highlighting in v1.
 - **FR-16** — Blockquotes, visually distinct from body text.
-- **FR-17** — Horizontal rules, rendered as a visual divider.
+- **FR-17** — Horizontal rules (`---`) are **ignored** (produce no output). A bordered rule renders poorly in Google Docs, and heading spacing already separates sections, so thematic breaks are dropped rather than drawn.
 - **FR-18** — Images. **URL-referenced images** (fetchable by Google's servers) are embedded inline at a reasonable width in v1. **Local-path images** are lower priority — the Docs API cannot embed a local file directly (it needs a Google-reachable URL), so v1 may warn-and-skip them per FR-21 rather than implement upload-and-temporary-link plumbing. (The reference document contains no images, so this is low-value for v1.) In all cases, an image that cannot be fetched/read must warn and continue, never abort the conversion.
 - **FR-19** — Links must remain clickable in the output document.
 - **FR-20** — Footnotes, rendered as Google Docs footnotes or an endnotes section if native footnotes are impractical.
