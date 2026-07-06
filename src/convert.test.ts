@@ -193,3 +193,10 @@ describe("convert other block types", () => {
     expect(insertedText(reqs)).toBe("above\n\nbelow\n");
   });
 });
+
+describe("convert deferred / unsupported blocks", () => {
+  test("a table reaching the linear converter fails loud rather than flattening", () => {
+    const tree = parseMarkdown("| A | B |\n|---|---|\n| 1 | 2 |\n");
+    expect(() => convert(tree)).toThrow(/planner/);
+  });
+});

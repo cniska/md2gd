@@ -71,6 +71,12 @@ function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
       return appendBlockquote(node, cursor, ctx);
     case "thematicBreak":
       return emitParagraph("", [], cursor, ctx, horizontalRuleParagraphStyle);
+    case "table":
+      // Tables cannot be emitted as absolute-indexed requests: their cell indices
+      // only exist after the empty table is inserted and read back. The document
+      // planner handles them separately; one must never reach the linear
+      // converter, so fail loud rather than flatten it to garbage text.
+      throw new Error("md2gd: tables are resolved by the document planner, not the linear converter");
     default:
       return appendRaw(mdastToString(node), cursor, ctx, 0, normalParagraphStyle());
   }
