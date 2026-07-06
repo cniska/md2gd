@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { convert } from "./convert";
-import type { InsertTextRequest, UpdateParagraphStyleRequest, UpdateTextStyleRequest } from "./docs";
+import type {
+  CreateParagraphBulletsRequest,
+  InsertTextRequest,
+  UpdateParagraphStyleRequest,
+  UpdateTextStyleRequest,
+} from "./docs";
 import { parseMarkdown } from "./parse";
 
 function insertedText(reqs: ReturnType<typeof convert>): string {
@@ -16,6 +21,10 @@ function paragraphStyles(reqs: ReturnType<typeof convert>): UpdateParagraphStyle
 
 function textStyles(reqs: ReturnType<typeof convert>): UpdateTextStyleRequest[] {
   return reqs.filter((r): r is UpdateTextStyleRequest => "updateTextStyle" in r);
+}
+
+function bullets(reqs: ReturnType<typeof convert>): CreateParagraphBulletsRequest[] {
+  return reqs.filter((r): r is CreateParagraphBulletsRequest => "createParagraphBullets" in r);
 }
 
 describe("convert paragraphs and headings", () => {
@@ -105,5 +114,53 @@ describe("convert inline formatting", () => {
     const text = insertedText(reqs);
     expect(text).toContain(String.fromCharCode(0x0b));
     expect(text).toBe(`Date: July 5${String.fromCharCode(0x0b)}Class: Confidential\n`);
+  });
+});
+
+describe("convert lists", () => {
+  test("a flat unordered list bullets its items with the disc preset", () => {
+    const reqs = convert(parseMarkdown("- one\n- two\n"));
+    expect(insertedText(reqs)).toBe("one\ntwo\n");
+    const bs = bullets(reqs);
+    expect(bs).toHaveLength(1);
+    expect(bs[0]?.createParagraphBullets.bulletPreset).toBe("BULLET_DISC_CIRCLE_SQUARE");
+    expect(bs[0]?.createParagraphBullets.range).toEqual({ startIndex: 1, endIndex: 9 });
+  });
+
+  test("an ordered list uses the numbered preset", () => {
+    const reqs = convert(parseMarkdown("1. first\n2. second\n"));
+    const bs = bullets(reqs);
+    expect(bs).toHaveLength(1);
+    expect(bs[0]?.createParagraphBullets.bulletPreset).toBe("NUMBERED_DECIMAL_ALPHA_ROMAN");
+  });
+
+  test("a nested list indents with a tab and is covered by one bullet request", () => {
+    const reqs = convert(parseMarkdown("- a\n  - b\n"));
+    // "a\n" then "\tb\n": the nested item carries one leading tab for depth.
+    expect(insertedText(reqs)).toBe("a\n\tb\n");
+    const bs = bullets(reqs);
+    expect(bs).toHaveLength(1);
+    expect(bs[0]?.createParagraphBullets.range).toEqual({ startIndex: 1, endIndex: 6 });
+  });
+
+  test("a task list uses the checkbox preset", () => {
+    const reqs = convert(parseMarkdown("- [ ] todo\n- [x] done\n"));
+    expect(insertedText(reqs)).toBe("todo\ndone\n");
+    expect(bullets(reqs)[0]?.createParagraphBullets.bulletPreset).toBe("BULLET_CHECKBOX");
+  });
+
+  test("bullet requests come last and in reverse document order", () => {
+    const reqs = convert(parseMarkdown("- a\n\ntext\n\n- b\n"));
+    const bs = bullets(reqs);
+    expect(bs).toHaveLength(2);
+    const [first, second] = bs;
+    if (!first || !second) throw new Error("expected two bullet requests");
+    // Later list first, so tab-stripping never invalidates an earlier range.
+    expect(first.createParagraphBullets.range.startIndex).toBeGreaterThan(
+      second.createParagraphBullets.range.startIndex,
+    );
+    // And they are the final requests in the batch.
+    const lastTwo = reqs.slice(-2);
+    expect(lastTwo.every((r) => "createParagraphBullets" in r)).toBe(true);
   });
 });

@@ -86,7 +86,20 @@ export interface UpdateTextStyleRequest {
   };
 }
 
-export type DocRequest = InsertTextRequest | UpdateParagraphStyleRequest | UpdateTextStyleRequest;
+export type BulletPreset = "BULLET_DISC_CIRCLE_SQUARE" | "NUMBERED_DECIMAL_ALPHA_ROMAN" | "BULLET_CHECKBOX";
+
+export interface CreateParagraphBulletsRequest {
+  createParagraphBullets: {
+    range: Range;
+    bulletPreset: BulletPreset;
+  };
+}
+
+export type DocRequest =
+  | InsertTextRequest
+  | UpdateParagraphStyleRequest
+  | UpdateTextStyleRequest
+  | CreateParagraphBulletsRequest;
 
 /** Index of the first insertable position in a freshly created document body. */
 export const BODY_START_INDEX = 1;
