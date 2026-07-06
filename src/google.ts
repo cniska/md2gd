@@ -19,6 +19,17 @@ export function documentUrl(documentId: string): string {
   return `https://docs.google.com/document/d/${documentId}/edit`;
 }
 
+/** Pull Google's human-readable reason out of an error response body. */
+async function errorMessage(res: Response): Promise<string> {
+  const text = await res.text();
+  try {
+    const parsed = JSON.parse(text) as { error?: { message?: string } };
+    return parsed.error?.message ?? text.slice(0, 300);
+  } catch {
+    return text.slice(0, 300);
+  }
+}
+
 /** DocsClient backed by the live Google Docs + Drive REST APIs. */
 export class GoogleDocsClient implements DocsClient {
   private readonly getToken: () => Promise<string>;
@@ -75,7 +86,7 @@ export class GoogleDocsClient implements DocsClient {
     if (body !== undefined) init.body = JSON.stringify(body);
 
     const res = await this.fetchFn(url, init);
-    if (!res.ok) throw new Error(`md2gd: Google API ${method} failed (${res.status})`);
+    if (!res.ok) throw new Error(`md2gd: Google API ${method} failed (${res.status}): ${await errorMessage(res)}`);
     return res.json();
   }
 }
