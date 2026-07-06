@@ -78,10 +78,6 @@ export function inlineRuns(nodes: PhrasingContent[]): InlineContent {
   return { text, runs };
 }
 
-export function styleFields(style: TextStyle): string {
-  return Object.keys(style).join(",");
-}
-
 /**
  * A link target is safe if it has no scheme (relative) or a benign one. Schemes
  * like `javascript:` and `data:` are rejected so they never become live links.

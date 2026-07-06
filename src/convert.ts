@@ -1,7 +1,7 @@
 import type { Blockquote, Code, List, ListItem, PhrasingContent, Root, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
-import { BODY_START_INDEX, type BulletPreset, type DocRequest, type ParagraphStyle } from "./docs";
-import { inlineRuns, LINE_BREAK, styleFields } from "./inline";
+import { BODY_START_INDEX, type BulletPreset, type DocRequest, fieldMask } from "./docs";
+import { inlineRuns, LINE_BREAK } from "./inline";
 import {
   blockquoteParagraphStyle,
   codeBlockParagraphStyle,
@@ -9,12 +9,8 @@ import {
   headingParagraphStyle,
   horizontalRuleParagraphStyle,
   normalParagraphStyle,
+  type ParagraphStyleSpec,
 } from "./style";
-
-interface ParagraphSpec {
-  paragraphStyle: ParagraphStyle;
-  fields: string;
-}
 
 interface BulletSpec {
   startIndex: number;
@@ -92,7 +88,7 @@ function appendCode(node: Code, cursor: number, ctx: Context): number {
           {
             updateTextStyle: {
               textStyle: codeBlockTextStyle,
-              fields: styleFields(codeBlockTextStyle),
+              fields: fieldMask(codeBlockTextStyle),
               range: { startIndex: cursor, endIndex: cursor + body.length },
             },
           },
@@ -141,6 +137,11 @@ function appendListItem(item: ListItem, depth: number, cursor: number, ctx: Cont
   return cursor;
 }
 
+// Known limitation: one preset applies to the whole (possibly nested) list, so a
+// list of one type nested inside another still renders with the outer preset's
+// per-level glyphs. Correct per-level presets for mixed nesting would need
+// separate bullet requests per contiguous same-type run. The target documents
+// use flat single-type lists, so this is documented rather than implemented.
 function bulletPreset(list: List): BulletPreset {
   if (list.ordered) return "NUMBERED_DECIMAL_ALPHA_ROMAN";
   if (list.children.some((item) => typeof item.checked === "boolean")) return "BULLET_CHECKBOX";
@@ -152,7 +153,7 @@ function appendParagraph(
   cursor: number,
   ctx: Context,
   indent: number,
-  spec: ParagraphSpec,
+  spec: ParagraphStyleSpec,
 ): number {
   const tabs = "\t".repeat(indent);
   const base = cursor + tabs.length;
@@ -160,14 +161,14 @@ function appendParagraph(
   const styleRequests: DocRequest[] = content.runs.map((run) => ({
     updateTextStyle: {
       textStyle: run.style,
-      fields: styleFields(run.style),
+      fields: fieldMask(run.style),
       range: { startIndex: base + run.start, endIndex: base + run.end },
     },
   }));
   return emitParagraph(`${tabs}${content.text}`, styleRequests, cursor, ctx, spec);
 }
 
-function appendRaw(value: string, cursor: number, ctx: Context, indent: number, spec: ParagraphSpec): number {
+function appendRaw(value: string, cursor: number, ctx: Context, indent: number, spec: ParagraphStyleSpec): number {
   return emitParagraph(`${"\t".repeat(indent)}${value}`, [], cursor, ctx, spec);
 }
 
@@ -176,7 +177,7 @@ function emitParagraph(
   inlineRequests: DocRequest[],
   cursor: number,
   ctx: Context,
-  spec: ParagraphSpec,
+  spec: ParagraphStyleSpec,
 ): number {
   const text = `${body}\n`;
   const start = cursor;

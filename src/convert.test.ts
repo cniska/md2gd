@@ -241,3 +241,12 @@ describe("convert typography and styling coverage", () => {
     expect(quote?.spaceBelow?.magnitude).toBeGreaterThan(0);
   });
 });
+
+describe("convert list nesting limitation", () => {
+  test("a mixed-type nested list uses the outer list's single preset (documented limitation)", () => {
+    const reqs = convert(parseMarkdown("1. one\n   - sub\n2. two\n"));
+    const bs = bullets(reqs);
+    expect(bs).toHaveLength(1);
+    expect(bs[0]?.createParagraphBullets.bulletPreset).toBe("NUMBERED_DECIMAL_ALPHA_ROMAN");
+  });
+});

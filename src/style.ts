@@ -1,4 +1,4 @@
-import { type Dimension, type NamedStyleType, type ParagraphStyle, pt, type TextStyle } from "./docs";
+import { type Dimension, fieldMask, type NamedStyleType, type ParagraphStyle, pt, type TextStyle } from "./docs";
 
 /**
  * Central style table — the single source of truth for the "clean sensible
@@ -13,14 +13,14 @@ import { type Dimension, type NamedStyleType, type ParagraphStyle, pt, type Text
 /** Comfortable body line spacing as a percentage (100 = single). */
 const BODY_LINE_SPACING = 115;
 
-interface ParagraphStyleSpec {
+export interface ParagraphStyleSpec {
   paragraphStyle: ParagraphStyle;
   /** Field mask naming which paragraphStyle properties to apply. */
   fields: string;
 }
 
 function spec(style: ParagraphStyle): ParagraphStyleSpec {
-  return { paragraphStyle: style, fields: Object.keys(style).join(",") };
+  return { paragraphStyle: style, fields: fieldMask(style) };
 }
 
 const NORMAL: ParagraphStyleSpec = spec({

@@ -124,3 +124,11 @@ export const BODY_START_INDEX = 1;
 export function pt(magnitude: number): Dimension {
   return { magnitude, unit: "PT" };
 }
+
+/**
+ * Build a Docs API `fields` mask from a partial style object: the API applies
+ * only the properties named here, so it must list exactly the keys that are set.
+ */
+export function fieldMask(style: object): string {
+  return Object.keys(style).join(",");
+}

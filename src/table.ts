@@ -23,16 +23,19 @@ export interface TablePlan {
   cells: CellPlan[][];
 }
 
-const EMPTY_CELL: CellPlan = { text: "", runs: [] };
+function emptyCell(): CellPlan {
+  return { text: "", runs: [] };
+}
 
 export function buildTablePlan(table: Table): TablePlan {
   const cells: CellPlan[][] = table.children.map((row) => row.children.map((cell) => inlineRuns(cell.children)));
   const rows = cells.length;
   const columns = cells.reduce((max, row) => Math.max(max, row.length), 0);
 
-  // Normalise ragged rows so every row has `columns` cells.
+  // Normalise ragged rows so every row has `columns` cells. Each padding cell is
+  // a fresh object, never a shared reference.
   for (const row of cells) {
-    while (row.length < columns) row.push(EMPTY_CELL);
+    while (row.length < columns) row.push(emptyCell());
   }
 
   return {
