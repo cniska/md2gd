@@ -64,6 +64,7 @@ The tool must faithfully render the following, mapping each to the closest nativ
 
 ### 2.4 Configuration & options (CLI)
 
+- **FR-21a** — Provide an `md2gd init` command for one-time setup: it accepts the user's downloaded OAuth **Desktop client** secret (e.g. `md2gd init --client client_secret.json`), stores it, and runs the consent flow once (AU-1), caching the token. After `init`, all conversion is pure command-line. Rationale: Google does not permit plain API keys for Drive/Docs writes, so a per-user OAuth token is required; `init` makes acquiring it a single explicit step rather than a hidden first-run side effect.
 - **FR-22** — Provide `--help` describing usage, arguments, and options.
 - **FR-23** — Provide `--version`.
 - **FR-24** — Allow overriding the document title (per FR-4).
@@ -124,7 +125,7 @@ Styling should be centralized/configurable enough that the default look can be a
 
 ## 4. Authentication & authorization requirements
 
-- **AU-1** — Authenticate to Google as the **user's personal Google account** using an OAuth "installed application" (desktop) flow. On first run, the tool opens the system browser for consent; subsequent runs reuse a locally cached token.
+- **AU-1** — Authenticate to Google as the **user's personal Google account** using an OAuth "installed application" (desktop) flow, initiated by `md2gd init` (FR-21a). It opens the system browser for consent once (a loopback redirect captures the code); subsequent runs reuse a locally cached token. Plain API keys are **not** an option — Google rejects them for Drive/Docs writes — and service accounts are unsuitable (no personal Drive storage, wrong ownership), so a cached user OAuth token is the mechanism.
 - **AU-2** — Cached credentials/tokens must be stored securely in a user-scoped location with appropriately restrictive file permissions, and must never be committed to the repository.
 - **AU-3** — Request the **minimum OAuth scopes** necessary. v1 uses only `drive.file` (access limited to files the tool creates) plus the Docs scope needed for `documents.create`/`batchUpdate`. Do **not** request the broad `drive` (all-files) scope — it is a sensitive scope that triggers Google verification and is unnecessary given the FR-25 own-folder model.
 - **AU-4** — Tokens must refresh automatically when expired without forcing a full re-consent, until revoked.
@@ -176,9 +177,9 @@ The tool is considered done for v1 when all of the following hold:
 - **AC-1** — Running `md2gd path/to/report.md` (the reference document) with valid auth produces a new Google Doc and prints its URL.
 - **AC-2** — Opening that URL shows a document where: the title is correct; all headings appear in the Google Docs outline pane at the right levels; every table renders with a styled header row and no overflow; bold/italic/links/inline code/emoji render correctly; horizontal rules appear as dividers; bulleted lists render with correct nesting.
 - **AC-3** — A test document exercising the full feature set in §2.3 (images, code blocks, blockquotes, task lists, nested numbered+bulleted lists, footnotes, strikethrough) renders each element correctly or degrades gracefully per FR-21, with no crash.
-- **AC-4** — First-run auth completes via browser consent; a second run reuses the cached token with no prompt.
+- **AC-4** — `md2gd init` completes auth via browser consent once; subsequent conversions reuse the cached token with no prompt and no browser.
 - **AC-5** — The visual result is subjectively "professional" per §3 and at least matches `md2doc.com` output quality on the reference document.
-- **AC-6** — All §2.4 CLI options (`--help`, `--version`, title override, `--open`) work as specified.
+- **AC-6** — `md2gd init` and all §2.4 CLI options (`--help`, `--version`, title override, `--open`) work as specified.
 - **AC-7** — Error cases from NF-3 each produce a clear, non-crashing message and a non-zero exit code.
 - **AC-8** — No credentials or document content are transmitted anywhere except Google's APIs; token/secret files are gitignored.
 

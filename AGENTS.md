@@ -29,6 +29,7 @@ These must always hold.
 2. Drive conversion slices test-first (red-green-refactor).
 3. When behavior and tests diverge: fix the implementation. Update expectations only if explicitly requested.
 4. Commit only when explicitly requested.
+5. Keep SPEC.md current at all times. Any decision that changes requirements, scope, or approach is reflected in SPEC.md as part of the same change — the spec never lags the code.
 
 ## Commits
 
