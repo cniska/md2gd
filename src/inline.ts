@@ -53,7 +53,9 @@ export function inlineRuns(nodes: PhrasingContent[]): InlineContent {
           walk(node.children, { ...active, strikethrough: true });
           break;
         case "link":
-          walk(node.children, { ...active, ...linkTextStyle(node.url) });
+          // Only link out to safe schemes; a javascript:/data: URL renders as
+          // plain styled text with no link attached.
+          walk(node.children, isSafeUrl(node.url) ? { ...active, ...linkTextStyle(node.url) } : active);
           break;
         case "break":
           emit(LINE_BREAK, active);
@@ -78,4 +80,16 @@ export function inlineRuns(nodes: PhrasingContent[]): InlineContent {
 
 export function styleFields(style: TextStyle): string {
   return Object.keys(style).join(",");
+}
+
+/**
+ * A link target is safe if it has no scheme (relative) or a benign one. Schemes
+ * like `javascript:` and `data:` are rejected so they never become live links.
+ */
+const SAFE_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
+
+export function isSafeUrl(url: string): boolean {
+  const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url);
+  if (!match?.[1]) return true;
+  return SAFE_SCHEMES.has(match[1].toLowerCase());
 }

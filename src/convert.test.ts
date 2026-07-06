@@ -200,3 +200,16 @@ describe("convert deferred / unsupported blocks", () => {
     expect(() => convert(tree)).toThrow(/planner/);
   });
 });
+
+describe("convert link safety and bare domains", () => {
+  test("a javascript: link renders as plain text with no link attached", () => {
+    const reqs = convert(parseMarkdown("click [here](javascript:alert(1)) ok\n"));
+    expect(insertedText(reqs)).toBe("click here ok\n");
+    expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
+  });
+
+  test("a scheme-less bare domain in prose is not turned into a link", () => {
+    const reqs = convert(parseMarkdown("see partybook-one.vercel.app today\n"));
+    expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
+  });
+});
