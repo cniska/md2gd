@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+.env
+coverage/
+*.bun-build
+
+# Built CLI binary
+/md2gd
+
+# OAuth client secrets, cached tokens, and any credentials (never commit — AU-2, NF-7)
+*.credentials.json
+client_secret*.json
+tokens.json
+.md2gd/

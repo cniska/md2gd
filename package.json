@@ -1,0 +1,24 @@
+{
+  "name": "md2gd",
+  "version": "0.1.0",
+  "description": "Convert Markdown files into professionally styled Google Docs from the command line",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "md2gd": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "format": "bunx biome format --write .",
+    "lint": "bunx biome check --error-on-warnings .",
+    "typecheck": "bunx tsc --noEmit",
+    "test": "bun test",
+    "audit": "bun audit",
+    "verify": "bun run lint && bun run typecheck && bun test && bun run audit"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.2",
+    "@types/bun": "^1.3.14",
+    "typescript": "^6.0.3"
+  }
+}
