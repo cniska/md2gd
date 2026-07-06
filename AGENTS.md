@@ -37,6 +37,7 @@ Format: `type(scope): description` — types: `feat`, `fix`, `refactor`, `docs`,
 ## Code
 
 - No transitional architecture: land the canonical contract and single source of truth.
+- No spec IDs (`FR-`/`ST-`/`NF-`/`AU-`) in code, comments, or test names — describe behavior in plain terms; SPEC.md is the reference for why.
 - Define string unions / shared types as a Zod schema first, infer the TS type from it.
 - Flat `src/`, colocated `*.test.ts`. No re-export layers, no banner/separator comments.
 - Factory naming: `create*`. Prefer direct `export const` over alias + `export { ... }`.

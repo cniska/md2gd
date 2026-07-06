@@ -11,7 +11,7 @@ describe("parseMarkdown", () => {
     expect(heading.depth).toBe(1);
   });
 
-  test("converts a soft line break inside a paragraph into a hard break (FR-32)", () => {
+  test("converts a soft line break inside a paragraph into a hard break", () => {
     const root = parseMarkdown("**Date:** July 5\n**Classification:** Confidential\n");
     expect(root.children).toHaveLength(1);
     const para = root.children[0];

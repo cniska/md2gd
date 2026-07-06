@@ -7,7 +7,7 @@ coverage/
 # Built CLI binary
 /md2gd
 
-# OAuth client secrets, cached tokens, and any credentials (never commit — AU-2, NF-7)
+# OAuth client secrets, cached tokens, and any credentials (never commit)
 *.credentials.json
 client_secret*.json
 tokens.json

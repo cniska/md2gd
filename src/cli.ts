@@ -32,7 +32,7 @@ function isVersion(arg: string | undefined): boolean {
 
 /**
  * Pure entry point: maps argv to output and an exit code without touching the
- * process, so it can be unit-tested offline (NF-12).
+ * process, so it can be unit-tested offline.
  */
 export function runCli(argv: string[]): CliResult {
   const first = argv[0];
