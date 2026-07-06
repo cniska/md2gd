@@ -56,4 +56,12 @@ describe("buildTablePlan", () => {
     const plan = firstTable(md);
     expect(plan.cells[1]?.[0]?.text).toBe("🟠 High");
   });
+
+  test("pads a ragged row so every row has the full column count", () => {
+    const md = ["| A | B | C |", "|---|---|---|", "| 1 | 2 |", ""].join("\n");
+    const plan = firstTable(md);
+    expect(plan.columns).toBe(3);
+    expect(plan.cells[1]).toHaveLength(3);
+    expect(plan.cells[1]?.[2]?.text).toBe("");
+  });
 });

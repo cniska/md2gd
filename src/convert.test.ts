@@ -213,3 +213,31 @@ describe("convert link safety and bare domains", () => {
     expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
   });
 });
+
+describe("convert typography and styling coverage", () => {
+  test("unicode punctuation passes through unchanged", () => {
+    const reqs = convert(parseMarkdown("A — B – C → D “q” ‘r’\n"));
+    expect(insertedText(reqs)).toBe("A — B – C → D “q” ‘r’\n");
+  });
+
+  test("a fully bold line stays body text and is not promoted to a heading", () => {
+    const reqs = convert(parseMarkdown("**Customer journey**\n"));
+    const styles = paragraphStyles(reqs);
+    expect(styles).toHaveLength(1);
+    expect(styles[0]?.updateParagraphStyle.paragraphStyle.namedStyleType).toBe("NORMAL_TEXT");
+    expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.bold)).toBe(true);
+  });
+
+  test("headings carry more space above than below so they group with their content", () => {
+    const reqs = convert(parseMarkdown("# Title\n"));
+    const style = paragraphStyles(reqs)[0]?.updateParagraphStyle.paragraphStyle;
+    expect(style?.spaceAbove?.magnitude).toBeGreaterThan(style?.spaceBelow?.magnitude ?? 0);
+  });
+
+  test("code and blockquote blocks carry space below so following text is separated", () => {
+    const code = paragraphStyles(convert(parseMarkdown("```\nx\n```\n")))[0]?.updateParagraphStyle.paragraphStyle;
+    const quote = paragraphStyles(convert(parseMarkdown("> q\n")))[0]?.updateParagraphStyle.paragraphStyle;
+    expect(code?.spaceBelow?.magnitude).toBeGreaterThan(0);
+    expect(quote?.spaceBelow?.magnitude).toBeGreaterThan(0);
+  });
+});
