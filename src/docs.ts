@@ -112,11 +112,83 @@ export interface CreateParagraphBulletsRequest {
   };
 }
 
+export interface InsertTableRequest {
+  insertTable: {
+    rows: number;
+    columns: number;
+    location: { index: number };
+  };
+}
+
+export type WidthType = "FIXED_WIDTH";
+
+export interface UpdateTableColumnPropertiesRequest {
+  updateTableColumnProperties: {
+    tableStartLocation: { index: number };
+    columnIndices: number[];
+    tableColumnProperties: { widthType: WidthType; width: Dimension };
+    fields: string;
+  };
+}
+
+export interface TableCellStyle {
+  paddingTop?: Dimension;
+  paddingBottom?: Dimension;
+  paddingLeft?: Dimension;
+  paddingRight?: Dimension;
+  backgroundColor?: OptionalColor;
+}
+
+export interface TableCellLocation {
+  tableStartLocation: { index: number };
+  rowIndex: number;
+  columnIndex: number;
+}
+
+export interface UpdateTableCellStyleRequest {
+  updateTableCellStyle: {
+    tableCellStyle: TableCellStyle;
+    fields: string;
+    tableStartLocation?: { index: number };
+    tableRange?: { tableCellLocation: TableCellLocation; rowSpan: number; columnSpan: number };
+  };
+}
+
 export type DocRequest =
   | InsertTextRequest
   | UpdateParagraphStyleRequest
   | UpdateTextStyleRequest
-  | CreateParagraphBulletsRequest;
+  | CreateParagraphBulletsRequest
+  | InsertTableRequest
+  | UpdateTableColumnPropertiesRequest
+  | UpdateTableCellStyleRequest;
+
+// Minimal shape of a `documents.get` response — only what the executor reads to
+// locate a freshly inserted table's real cell indices.
+export interface DocStructuralElement {
+  startIndex?: number;
+  endIndex?: number;
+  table?: DocTable;
+}
+
+export interface DocTable {
+  tableRows: DocTableRow[];
+}
+
+export interface DocTableRow {
+  tableCells: DocTableCell[];
+}
+
+export interface DocTableCell {
+  startIndex?: number;
+  endIndex?: number;
+  content: DocStructuralElement[];
+}
+
+export interface DocumentResource {
+  documentId?: string;
+  body?: { content: DocStructuralElement[] };
+}
 
 /** Index of the first insertable position in a freshly created document body. */
 export const BODY_START_INDEX = 1;
