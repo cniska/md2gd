@@ -23,6 +23,16 @@ md2gd removes that step. One command, the same clean styling every time, and the
 
 ## Install
 
+### Prebuilt binary
+
+```
+curl -fsSL https://raw.githubusercontent.com/cniska/md2gd/main/scripts/install.sh | sh
+```
+
+Downloads the latest release binary for your platform into `~/.local/bin` and verifies its checksum — no Bun required. (Available once a release is published.)
+
+### From source
+
 ```
 git clone https://github.com/cniska/md2gd.git
 cd md2gd
