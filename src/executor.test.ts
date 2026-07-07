@@ -80,6 +80,10 @@ describe("executeDocument", () => {
     expect(styleFill.filter((r) => "updateTableColumnProperties" in r)).toHaveLength(2);
     expect(styleFill.some((r) => "updateTableCellStyle" in r && r.updateTableCellStyle.tableStartLocation)).toBe(true);
     expect(styleFill.some((r) => "updateTableCellStyle" in r && r.updateTableCellStyle.tableRange)).toBe(true);
+    // Rows are set not to split across page breaks.
+    expect(
+      styleFill.some((r) => "updateTableRowStyle" in r && r.updateTableRowStyle.tableRowStyle.preventOverflow),
+    ).toBe(true);
 
     // Cell fills are inserted in descending index order (last cell first).
     const inserts = styleFill.filter((r): r is Extract<DocRequest, { insertText: unknown }> => "insertText" in r);

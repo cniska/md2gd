@@ -126,6 +126,7 @@ async function insertTableSegment(
     ...preTableSpacerRequests(located.startIndex),
     ...columnWidthRequests(plan, located.startIndex),
     cellPaddingRequest(located.startIndex),
+    preventRowSplitRequest(located.startIndex),
     ...(plan.header ? [headerShadingRequest(plan, located.startIndex)] : []),
     ...cellFillRequests(plan, located.cellIndices),
   ];
@@ -187,6 +188,15 @@ function columnWidthRequests(plan: TablePlan, tableStart: number): DocRequest[] 
       fields: "widthType,width",
     },
   }));
+}
+
+function preventRowSplitRequest(tableStart: number): DocRequest {
+  // Applies to every row (no rowIndices) so a row is never split across a page
+  // break — the whole row moves to the next page instead.
+  const style = { preventOverflow: true };
+  return {
+    updateTableRowStyle: { tableStartLocation: { index: tableStart }, tableRowStyle: style, fields: fieldMask(style) },
+  };
 }
 
 function cellPaddingRequest(tableStart: number): DocRequest {

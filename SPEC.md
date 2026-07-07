@@ -120,7 +120,7 @@ The chosen visual identity is a **neutral, clean, professional default** — no 
 - **ST-1** — A coherent typographic hierarchy: body text in a highly readable serif or sans-serif at a comfortable reading size; headings clearly differentiated by size and weight, with H1 > H2 > H3 visibly distinct.
 - **ST-2** — Sensible vertical rhythm: adequate space before/after headings, paragraphs, and lists so the document breathes and isn't cramped.
 - **ST-3** — Comfortable line spacing for body text (not single-spaced dense).
-- **ST-4** — Tables styled for readability: a visually distinct header row (e.g. bold and/or subtle background shade), light cell borders or row banding, and adequate cell padding. Tables must not overflow the page width.
+- **ST-4** — Tables styled for readability: a visually distinct header row (e.g. bold and/or subtle background shade), light cell borders or row banding, and adequate cell padding. Tables must not overflow the page width, and a row must not split across a page break — a row that doesn't fit moves whole to the next page.
 - **ST-5** — Code and inline code in a monospace font, visually set apart from prose.
 - **ST-6** — Blockquotes visually indented and/or accented.
 - **ST-7** — Consistent, professional page margins.

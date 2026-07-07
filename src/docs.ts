@@ -169,6 +169,22 @@ export interface UpdateTableCellStyleRequest {
   };
 }
 
+export interface TableRowStyle {
+  minRowHeight?: Dimension;
+  /** True if the row cannot overflow (split) across a page or column boundary. */
+  preventOverflow?: boolean;
+}
+
+export interface UpdateTableRowStyleRequest {
+  updateTableRowStyle: {
+    tableStartLocation: { index: number };
+    /** Omitted to apply to every row in the table. */
+    rowIndices?: number[];
+    tableRowStyle: TableRowStyle;
+    fields: string;
+  };
+}
+
 export type DocRequest =
   | InsertTextRequest
   | UpdateParagraphStyleRequest
@@ -178,7 +194,8 @@ export type DocRequest =
   | DeleteParagraphBulletsRequest
   | InsertTableRequest
   | UpdateTableColumnPropertiesRequest
-  | UpdateTableCellStyleRequest;
+  | UpdateTableCellStyleRequest
+  | UpdateTableRowStyleRequest;
 
 // Minimal shape of a `documents.get` response — only what the executor reads to
 // locate a freshly inserted table's real cell indices.
