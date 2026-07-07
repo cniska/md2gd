@@ -105,3 +105,11 @@ To sign out, delete the cached token and re-run `init`:
 rm ~/.md2gd/token.json      # re-authenticate on next `md2gd init`
 rm -rf ~/.md2gd             # full reset, including the stored client secret
 ```
+
+## Contributing
+
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run `bun run verify` before every commit.
+
+## License
+
+[MIT](LICENSE) © Christoffer Niska
