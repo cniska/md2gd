@@ -45,9 +45,9 @@ export async function convertFile(filePath: string, options: ConvertOptions, cli
 }
 
 /**
- * Re-render a Markdown file into an **existing** document (stable-URL mode).
- * Translates the `drive.file` 404 — raised when the target isn't a doc md2gd
- * created (or no longer exists) — into an actionable message (FR-43).
+ * Re-render a Markdown file into an **existing** document (stable-URL mode). The
+ * `drive.file` 404 for a doc md2gd didn't create is translated by `updateDocument`
+ * at the read-before-destroy step.
  */
 export async function updateFile(
   filePath: string,
@@ -57,16 +57,7 @@ export async function updateFile(
 ): Promise<void> {
   const tree = await loadTree(filePath);
   const title = options.title ?? deriveTitle(tree, filePath);
-  try {
-    await updateDocument(client, documentId, title, planDocument(tree));
-  } catch (error) {
-    if (error instanceof Error && /\(404\)/.test(error.message)) {
-      throw new Error(
-        `md2gd: cannot update document ${documentId} — md2gd can only update documents it created, and the document must still exist`,
-      );
-    }
-    throw error;
-  }
+  await updateDocument(client, documentId, title, planDocument(tree));
 }
 
 /** Extract a Google Docs document id from a full edit URL or accept a bare id. */

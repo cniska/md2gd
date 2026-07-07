@@ -48,7 +48,21 @@ export async function updateDocument(
   title: string,
   segments: Segment[],
 ): Promise<void> {
-  const doc = await client.getDocument(documentId);
+  // Read before any destructive call. A 404 here means the target isn't a doc
+  // md2gd created (drive.file hides it) or no longer exists — translate it to an
+  // actionable message. Only the read is wrapped; later failures surface as-is.
+  let doc: DocumentResource;
+  try {
+    doc = await client.getDocument(documentId);
+  } catch (error) {
+    if (error instanceof Error && /\(404\)/.test(error.message)) {
+      throw new Error(
+        `md2gd: cannot update document ${documentId} — md2gd can only update documents it created, and the document must still exist`,
+      );
+    }
+    throw error;
+  }
+
   const clear = clearBodyRequests(doc);
   if (clear.length > 0) await client.batchUpdate(documentId, clear);
   await fillSegments(client, documentId, segments);
