@@ -1,7 +1,7 @@
 import { convertNodes } from "./convert";
 import { BODY_START_INDEX, type DocRequest, type DocumentResource, fieldMask, type TableCellStyle } from "./docs";
 import type { Segment } from "./plan";
-import { bodyFontTextStyle, CELL_PADDING, HEADER_SHADING } from "./style";
+import { bodyFontTextStyle, CELL_PADDING, HEADER_SHADING, normalParagraphStyle } from "./style";
 import type { TablePlan } from "./table";
 
 /**
@@ -12,6 +12,8 @@ export interface DocsClient {
   createDocument(title: string): Promise<{ documentId: string }>;
   batchUpdate(documentId: string, requests: DocRequest[]): Promise<void>;
   getDocument(documentId: string): Promise<DocumentResource>;
+  /** Rename the underlying Drive file (used to keep an updated doc's title in sync). */
+  renameDocument(documentId: string, name: string): Promise<void>;
 }
 
 /**
@@ -22,6 +24,32 @@ export interface DocsClient {
  */
 export async function executeDocument(client: DocsClient, title: string, segments: Segment[]): Promise<string> {
   const { documentId } = await client.createDocument(title);
+  await fillSegments(client, documentId, segments);
+  return documentId;
+}
+
+/**
+ * Re-render an existing document in place ("stable URL" mode). The doc is read
+ * first (so an auth/404/permission failure leaves it untouched — FR-39), its
+ * body cleared, then the normal fill pipeline runs into the emptied doc. If the
+ * desired title differs from the doc's current name, the Drive file is renamed
+ * so the title tracks the H1 (FR-41). The URL and Drive location never change.
+ */
+export async function updateDocument(
+  client: DocsClient,
+  documentId: string,
+  title: string,
+  segments: Segment[],
+): Promise<void> {
+  const doc = await client.getDocument(documentId);
+  const clear = clearBodyRequests(doc);
+  if (clear.length > 0) await client.batchUpdate(documentId, clear);
+  await fillSegments(client, documentId, segments);
+  if (doc.title !== title) await client.renameDocument(documentId, title);
+}
+
+/** Populate a document (create or freshly cleared) from planned segments. */
+async function fillSegments(client: DocsClient, documentId: string, segments: Segment[]): Promise<void> {
   let cursor = BODY_START_INDEX;
 
   for (const segment of segments) {
@@ -33,8 +61,26 @@ export async function executeDocument(client: DocsClient, title: string, segment
       cursor = await insertTableSegment(client, documentId, segment.table, cursor);
     }
   }
+}
 
-  return documentId;
+/**
+ * Requests that empty a document's body. Deletes all content except the final
+ * undeletable newline, then resets the surviving paragraph to NORMAL_TEXT with
+ * no bullets so the previous render's trailing heading/list style can't bleed
+ * into the new content (FR-40). An already-empty body skips the delete.
+ */
+function clearBodyRequests(doc: DocumentResource): DocRequest[] {
+  const requests: DocRequest[] = [];
+  const end = bodyEndInsertIndex(doc);
+  if (end > BODY_START_INDEX) {
+    requests.push({ deleteContentRange: { range: { startIndex: BODY_START_INDEX, endIndex: end } } });
+  }
+
+  const reset = normalParagraphStyle();
+  const range = { startIndex: BODY_START_INDEX, endIndex: BODY_START_INDEX + 1 };
+  requests.push({ updateParagraphStyle: { paragraphStyle: reset.paragraphStyle, fields: reset.fields, range } });
+  requests.push({ deleteParagraphBullets: { range } });
+  return requests;
 }
 
 async function insertTableSegment(

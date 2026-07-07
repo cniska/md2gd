@@ -1,26 +1,37 @@
 import { describe, expect, test } from "bun:test";
 import type { DocRequest, DocumentResource } from "./docs";
-import { executeDocument } from "./executor";
+import { executeDocument, updateDocument } from "./executor";
 import { parseMarkdown } from "./parse";
 import { planDocument } from "./plan";
 
-/** Records calls; returns queued getDocument responses in order. */
+/** Records calls in order; returns queued getDocument responses in order. */
 class MockClient {
   batches: DocRequest[][] = [];
   getCalls = 0;
+  renames: { id: string; name: string }[] = [];
+  /** Ordered log of side-effecting calls, to assert read-before-destroy. */
+  calls: string[] = [];
   constructor(private readonly getResponses: DocumentResource[] = []) {}
 
   createDocument(_title: string): Promise<{ documentId: string }> {
+    this.calls.push("create");
     return Promise.resolve({ documentId: "doc-1" });
   }
   batchUpdate(_id: string, requests: DocRequest[]): Promise<void> {
+    this.calls.push("batchUpdate");
     this.batches.push(requests);
     return Promise.resolve();
   }
   getDocument(_id: string): Promise<DocumentResource> {
+    this.calls.push("getDocument");
     const response = this.getResponses[this.getCalls] ?? { body: { content: [] } };
     this.getCalls++;
     return Promise.resolve(response);
+  }
+  renameDocument(id: string, name: string): Promise<void> {
+    this.calls.push("renameDocument");
+    this.renames.push({ id, name });
+    return Promise.resolve();
   }
 }
 
@@ -77,5 +88,60 @@ describe("executeDocument", () => {
     // Highest-index cell (14) is filled before the lowest (3).
     expect(indices[0]).toBe(14);
     expect(indices.at(-1)).toBe(3);
+  });
+});
+
+describe("updateDocument", () => {
+  /** A populated body spanning [1, 30) — endIndex 30 means content ends at 29. */
+  const populated: DocumentResource = {
+    title: "Old title",
+    body: { content: [{ startIndex: 1, endIndex: 30 }] },
+  };
+
+  test("reads the doc before any destructive call (FR-39)", async () => {
+    const client = new MockClient([populated]);
+    const segments = planDocument(parseMarkdown("# New\n\nBody.\n"));
+    await updateDocument(client, "doc-x", "New", segments);
+    // The very first call must be the read.
+    expect(client.calls[0]).toBe("getDocument");
+    expect(client.calls.indexOf("getDocument")).toBeLessThan(client.calls.indexOf("batchUpdate"));
+  });
+
+  test("clears the body: deletes content over [1, end-1] then resets the paragraph", async () => {
+    const client = new MockClient([populated]);
+    await updateDocument(client, "doc-x", "Old title", planDocument(parseMarkdown("Body.\n")));
+
+    const clearBatch = client.batches[0] ?? [];
+    const del = clearBatch.find((r) => "deleteContentRange" in r);
+    expect(del).toEqual({ deleteContentRange: { range: { startIndex: 1, endIndex: 29 } } });
+    // The surviving paragraph is reset to NORMAL_TEXT and stripped of bullets.
+    const reset = clearBatch.find((r) => "updateParagraphStyle" in r);
+    expect(reset).toBeDefined();
+    expect(clearBatch.some((r) => "deleteParagraphBullets" in r)).toBe(true);
+  });
+
+  test("an already-empty body skips the delete but still resets the paragraph", async () => {
+    const empty: DocumentResource = { title: "T", body: { content: [{ startIndex: 1, endIndex: 2 }] } };
+    const client = new MockClient([empty]);
+    await updateDocument(client, "doc-x", "T", planDocument(parseMarkdown("Body.\n")));
+
+    const clearBatch = client.batches[0] ?? [];
+    expect(clearBatch.some((r) => "deleteContentRange" in r)).toBe(false);
+    expect(clearBatch.some((r) => "updateParagraphStyle" in r)).toBe(true);
+    expect(clearBatch.some((r) => "deleteParagraphBullets" in r)).toBe(true);
+  });
+
+  test("renames the Drive file when the title changed", async () => {
+    const client = new MockClient([populated]);
+    await updateDocument(client, "doc-x", "New title", planDocument(parseMarkdown("Body.\n")));
+    expect(client.renames).toEqual([{ id: "doc-x", name: "New title" }]);
+    // Rename happens only after the body is filled.
+    expect(client.calls.lastIndexOf("batchUpdate")).toBeLessThan(client.calls.indexOf("renameDocument"));
+  });
+
+  test("does not rename when the title is unchanged", async () => {
+    const client = new MockClient([populated]);
+    await updateDocument(client, "doc-x", "Old title", planDocument(parseMarkdown("Body.\n")));
+    expect(client.renames).toHaveLength(0);
   });
 });

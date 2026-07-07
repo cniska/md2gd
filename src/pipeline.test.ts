@@ -25,6 +25,9 @@ class StubClient implements DocsClient {
   getDocument(_id: string): Promise<DocumentResource> {
     return Promise.resolve({ body: { content: [] } });
   }
+  renameDocument(_id: string, _name: string): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 describe("convertFile", () => {

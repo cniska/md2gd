@@ -63,6 +63,11 @@ export class GoogleDocsClient implements DocsClient {
     return (await this.json("GET", `${DOCS_API}/${documentId}`)) as DocumentResource;
   }
 
+  async renameDocument(documentId: string, name: string): Promise<void> {
+    // The Docs document id is its Drive file id, so the title is renamed via Drive.
+    await this.json("PATCH", `${DRIVE_API}/${documentId}`, { name });
+  }
+
   private async ensureFolder(): Promise<string> {
     const q = `name='${this.folderName}' and mimeType='${FOLDER_MIME}' and trashed=false`;
     const found = (await this.json("GET", `${DRIVE_API}?q=${encodeURIComponent(q)}&fields=files(id)`)) as {

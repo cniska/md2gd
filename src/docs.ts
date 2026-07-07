@@ -112,6 +112,18 @@ export interface CreateParagraphBulletsRequest {
   };
 }
 
+export interface DeleteContentRangeRequest {
+  deleteContentRange: {
+    range: Range;
+  };
+}
+
+export interface DeleteParagraphBulletsRequest {
+  deleteParagraphBullets: {
+    range: Range;
+  };
+}
+
 export interface InsertTableRequest {
   insertTable: {
     rows: number;
@@ -159,6 +171,8 @@ export type DocRequest =
   | UpdateParagraphStyleRequest
   | UpdateTextStyleRequest
   | CreateParagraphBulletsRequest
+  | DeleteContentRangeRequest
+  | DeleteParagraphBulletsRequest
   | InsertTableRequest
   | UpdateTableColumnPropertiesRequest
   | UpdateTableCellStyleRequest;
@@ -187,6 +201,7 @@ export interface DocTableCell {
 
 export interface DocumentResource {
   documentId?: string;
+  title?: string;
   body?: { content: DocStructuralElement[] };
 }
 
