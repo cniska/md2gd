@@ -89,6 +89,36 @@ describe("executeDocument", () => {
     expect(indices[0]).toBe(14);
     expect(indices.at(-1)).toBe(3);
   });
+
+  test("the injected paragraph before a table is pinned to a thin spacer", async () => {
+    // A table not at the body start (startIndex 5) has a preceding paragraph at [4,5).
+    const tableGet: DocumentResource = {
+      body: {
+        content: [
+          {
+            startIndex: 5,
+            endIndex: 30,
+            table: {
+              tableRows: [{ tableCells: [{ content: [{ startIndex: 7 }] }, { content: [{ startIndex: 10 }] }] }],
+            },
+          },
+        ],
+      },
+    };
+    const endGet: DocumentResource = { body: { content: [{ startIndex: 1, endIndex: 40 }] } };
+    const client = new MockClient([tableGet, endGet]);
+    await executeDocument(client, "T", planDocument(parseMarkdown("| a | b |\n|---|---|\n")));
+
+    const styleFill = client.batches[1] ?? [];
+    const spacerPara = styleFill.find(
+      (r) => "updateParagraphStyle" in r && r.updateParagraphStyle.range.startIndex === 4,
+    );
+    expect(spacerPara).toBeDefined();
+    const spacerFont = styleFill.find(
+      (r) => "updateTextStyle" in r && r.updateTextStyle.range.startIndex === 4 && r.updateTextStyle.textStyle.fontSize,
+    );
+    expect(spacerFont).toBeDefined();
+  });
 });
 
 describe("updateDocument", () => {

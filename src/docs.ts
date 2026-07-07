@@ -78,6 +78,7 @@ export interface TextStyle {
   strikethrough?: boolean;
   link?: { url: string };
   weightedFontFamily?: WeightedFontFamily;
+  fontSize?: Dimension;
   foregroundColor?: OptionalColor;
   backgroundColor?: OptionalColor;
 }

@@ -111,6 +111,22 @@ export const MIN_COLUMN_WIDTH_PT = 54;
 /** Internal padding on every table cell, so text never touches the borders. */
 export const CELL_PADDING: Dimension = pt(5);
 
+/**
+ * The Docs API injects an empty paragraph immediately before every table. Left
+ * alone it inherits whatever style preceded it — which differs between a fresh
+ * doc and a cleared one, so the same input would render tables differently in
+ * create vs. update mode. Pinning it to a thin, zero-spacing line makes tables
+ * sit consistently and lets a caption group tightly with the table below it.
+ */
+export const preTableParagraphStyle: ParagraphStyleSpec = spec({
+  spaceAbove: pt(0),
+  spaceBelow: pt(0),
+  lineSpacing: 100,
+});
+
+/** Small font on that injected newline, so the spacer above a table stays subtle. */
+export const preTableTextStyle: TextStyle = { fontSize: pt(6) };
+
 /** Subtle grey fill distinguishing a table's header row. */
 export const HEADER_SHADING = { color: { rgbColor: { red: 0.9, green: 0.9, blue: 0.9 } } };
 

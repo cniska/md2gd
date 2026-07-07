@@ -1,7 +1,14 @@
 import { convertNodes } from "./convert";
 import { BODY_START_INDEX, type DocRequest, type DocumentResource, fieldMask, type TableCellStyle } from "./docs";
 import type { Segment } from "./plan";
-import { bodyFontTextStyle, CELL_PADDING, HEADER_SHADING, normalParagraphStyle } from "./style";
+import {
+  bodyFontTextStyle,
+  CELL_PADDING,
+  HEADER_SHADING,
+  normalParagraphStyle,
+  preTableParagraphStyle,
+  preTableTextStyle,
+} from "./style";
 import type { TablePlan } from "./table";
 
 /**
@@ -102,6 +109,7 @@ async function insertTableSegment(
   //    cell fills are ordered last-cell-first so each insertion never shifts a
   //    not-yet-filled cell's index.
   const requests: DocRequest[] = [
+    ...preTableSpacerRequests(located.startIndex),
     ...columnWidthRequests(plan, located.startIndex),
     cellPaddingRequest(located.startIndex),
     ...(plan.header ? [headerShadingRequest(plan, located.startIndex)] : []),
@@ -131,6 +139,28 @@ function locateTable(doc: DocumentResource, atIndex: number): LocatedTable | und
     }),
   );
   return { startIndex: element.startIndex, cellIndices };
+}
+
+/**
+ * Pin the empty paragraph the API injects before the table to a thin,
+ * deterministic spacer. Skipped when the table starts at the body's first index
+ * (no paragraph precedes it). This is what makes create and update modes render
+ * tables identically, and lets a preceding caption group with its table.
+ */
+function preTableSpacerRequests(tableStart: number): DocRequest[] {
+  const paragraphStart = tableStart - 1;
+  if (paragraphStart < BODY_START_INDEX) return [];
+  const range = { startIndex: paragraphStart, endIndex: tableStart };
+  return [
+    {
+      updateParagraphStyle: {
+        paragraphStyle: preTableParagraphStyle.paragraphStyle,
+        fields: preTableParagraphStyle.fields,
+        range,
+      },
+    },
+    { updateTextStyle: { textStyle: preTableTextStyle, fields: fieldMask(preTableTextStyle), range } },
+  ];
 }
 
 function columnWidthRequests(plan: TablePlan, tableStart: number): DocRequest[] {
