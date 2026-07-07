@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Convert Markdown files into professionally styled Google Docs from the command line",
   "license": "MIT",
+  "author": "Christoffer Niska",
+  "keywords": [
+    "markdown",
+    "google-docs",
+    "cli",
+    "converter",
+    "gfm",
+    "bun"
+  ],
   "type": "module",
   "bin": {
     "md2gd": "./src/cli.ts"
