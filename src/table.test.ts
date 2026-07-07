@@ -39,6 +39,17 @@ describe("buildTablePlan", () => {
     expect(sev.magnitude + finding.magnitude).toBeLessThanOrEqual(468);
   });
 
+  test("a short emoji column is widened to hold its value on one line", () => {
+    // "🔴 Critical" needs ~70pt of content width; the old flat 54pt floor wrapped it.
+    const md = ["| Severity | Finding |", "|---|---|", `| 🔴 Critical | ${"x".repeat(400)} |`, ""].join("\n");
+    const [sev, finding] = firstTable(md).columnWidths;
+    if (!sev || !finding) throw new Error("expected two widths");
+    expect(sev.magnitude).toBeGreaterThanOrEqual(75);
+    // But it must not run away with the page — the long column still dominates.
+    expect(finding.magnitude).toBeGreaterThan(sev.magnitude);
+    expect(sev.magnitude + finding.magnitude).toBeLessThanOrEqual(468);
+  });
+
   test("a longer-content column gets a wider column", () => {
     const md = ["| K | Description |", "|---|---|", "| a | this cell has much longer content than the key |", ""].join(
       "\n",
