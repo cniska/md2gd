@@ -182,6 +182,7 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 - Reverse conversion (Google Docs → Markdown).
 - ~~Updating/syncing a previously created doc in place.~~ **Now in scope** as "stable URL" mode — see §2.6 (FR-38–FR-43). Limited to docs md2gd created (`drive.file`); patching hand-made docs remains out of scope.
 - Updating a document md2gd did **not** create (a doc authored by hand in the Docs UI) — needs the broad `drive` scope and is out of scope (see FR-38 scope constraint).
+- Headers / footers, and page numbers. The Docs API has no page-number field request, and a footer is a single block shared across all pages, so a live page number is not achievable via `batchUpdate` at all. A static title header is possible but low-value (the doc already opens with its H1) and is deferred; it can be added later as an isolated slice.
 - Batch conversion of many files in one invocation (nice-to-have, not required).
 - Multi-user / team / server deployment, or service-account automation.
 - Syntax highlighting inside code blocks.
