@@ -13,6 +13,14 @@
     "bun"
   ],
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cniska/md2gd.git"
+  },
+  "bugs": {
+    "url": "https://github.com/cniska/md2gd/issues"
+  },
+  "homepage": "https://github.com/cniska/md2gd#readme",
   "bin": {
     "md2gd": "./src/cli.ts"
   },

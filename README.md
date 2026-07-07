@@ -18,11 +18,15 @@ One command turns a Markdown file into a cleanly styled Google Doc in your Drive
 ## Install
 
 ```
+git clone https://github.com/cniska/md2gd.git
+cd md2gd
 bun install
 bun link        # exposes `md2gd` on your PATH
 ```
 
 You can also run it without linking via `bun run src/cli.ts <file.md>`.
+
+Once set up (see below), try it on the bundled sample: `md2gd examples/sample.md`.
 
 ## One-time Google setup
 
