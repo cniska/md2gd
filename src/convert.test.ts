@@ -137,6 +137,14 @@ describe("convert lists", () => {
     expect(bs[0]?.createParagraphBullets.bulletPreset).toBe("NUMBERED_DECIMAL_ALPHA_ROMAN");
   });
 
+  test("list items are tightly spaced but the last item restores space after the list", () => {
+    const styles = paragraphStyles(convert(parseMarkdown("- one\n- two\n- three\n")));
+    const below = styles.map((s) => s.updateParagraphStyle.paragraphStyle.spaceBelow?.magnitude ?? 0);
+    // Interior items are tight; the final item gets the larger after-list space.
+    expect(below[0]).toBeLessThan(below[below.length - 1] ?? 0);
+    expect(below[below.length - 1]).toBeGreaterThanOrEqual(8);
+  });
+
   test("a nested list indents with a tab and is covered by one bullet request", () => {
     const reqs = convert(parseMarkdown("- a\n  - b\n"));
     // "a\n" then "\tb\n": the nested item carries one leading tab for depth.

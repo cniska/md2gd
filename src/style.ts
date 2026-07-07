@@ -48,6 +48,25 @@ export function normalParagraphStyle(): ParagraphStyleSpec {
 }
 
 /**
+ * List items sit closer together than body paragraphs so a list reads as one
+ * grouped block rather than a stack of separate paragraphs. The space *after*
+ * the whole list is restored separately (LIST_AFTER_SPACE) so it doesn't butt
+ * against the next block.
+ */
+const LIST_ITEM: ParagraphStyleSpec = spec({
+  namedStyleType: "NORMAL_TEXT",
+  lineSpacing: BODY_LINE_SPACING,
+  spaceBelow: pt(2),
+});
+
+export function listItemParagraphStyle(): ParagraphStyleSpec {
+  return LIST_ITEM;
+}
+
+/** Space below a list's final item, matching body paragraph spacing. */
+export const LIST_AFTER_SPACE: Dimension = pt(8);
+
+/**
  * A bold-only line (e.g. `**Customer journey**` above a table) is a caption, not
  * a heading. It keeps body text (out of the outline) but gets space above to
  * separate it from preceding content and tight space below so it groups with the

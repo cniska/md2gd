@@ -17,6 +17,8 @@ import {
   codeBlockParagraphStyle,
   codeBlockTextStyle,
   headingParagraphStyle,
+  LIST_AFTER_SPACE,
+  listItemParagraphStyle,
   normalParagraphStyle,
   type ParagraphStyleSpec,
 } from "./style";
@@ -124,6 +126,26 @@ function ensureSpaceAbove(requests: DocRequest[], floor: Dimension): void {
 }
 
 /**
+ * Raise the space-below of the last paragraph styled since `fromIndex` to at
+ * least `floor` (cloning the shared spec). Used to restore normal spacing after
+ * a tightly-spaced list.
+ */
+function ensureSpaceBelowOnLast(requests: DocRequest[], fromIndex: number, floor: Dimension): void {
+  for (let i = requests.length - 1; i >= fromIndex; i--) {
+    const request = requests[i];
+    if (!request || !("updateParagraphStyle" in request)) continue;
+    const style = request.updateParagraphStyle.paragraphStyle;
+    if ((style.spaceBelow?.magnitude ?? 0) < floor.magnitude) {
+      request.updateParagraphStyle.paragraphStyle = { ...style, spaceBelow: floor };
+      if (!request.updateParagraphStyle.fields.split(",").includes("spaceBelow")) {
+        request.updateParagraphStyle.fields = `${request.updateParagraphStyle.fields},spaceBelow`;
+      }
+    }
+    return;
+  }
+}
+
+/**
  * A paragraph is a caption when every child is bold (`**…**`), ignoring
  * whitespace-only text. Detected here rather than by lookahead because the
  * caption ends a linear segment and the table it introduces is the next segment.
@@ -166,6 +188,7 @@ function appendBlockquote(node: Blockquote, cursor: number, ctx: Context): numbe
 function appendList(list: List, depth: number, cursor: number, ctx: Context): number {
   const preset = bulletPreset(list);
   const listStart = cursor;
+  const requestStart = ctx.requests.length;
 
   for (const item of list.children) {
     cursor = appendListItem(item, depth, cursor, ctx);
@@ -175,6 +198,9 @@ function appendList(list: List, depth: number, cursor: number, ctx: Context): nu
   // the same range and distinguished by their leading-tab depth.
   if (depth === 0 && cursor > listStart) {
     ctx.bullets.push({ startIndex: listStart, endIndex: cursor, preset });
+    // Items are tightly spaced; restore normal space below the final one so the
+    // list doesn't butt against the following block.
+    ensureSpaceBelowOnLast(ctx.requests, requestStart, LIST_AFTER_SPACE);
   }
   return cursor;
 }
@@ -184,9 +210,9 @@ function appendListItem(item: ListItem, depth: number, cursor: number, ctx: Cont
     if (child.type === "list") {
       cursor = appendList(child, depth + 1, cursor, ctx);
     } else if (child.type === "paragraph") {
-      cursor = appendParagraph(child.children, cursor, ctx, depth, normalParagraphStyle());
+      cursor = appendParagraph(child.children, cursor, ctx, depth, listItemParagraphStyle());
     } else {
-      cursor = appendRaw(mdastToString(child), cursor, ctx, depth, normalParagraphStyle());
+      cursor = appendRaw(mdastToString(child), cursor, ctx, depth, listItemParagraphStyle());
     }
   }
   return cursor;
