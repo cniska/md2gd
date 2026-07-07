@@ -106,7 +106,7 @@ export interface UpdateTextStyleRequest {
   };
 }
 
-export type BulletPreset = "BULLET_DISC_CIRCLE_SQUARE" | "NUMBERED_DECIMAL_ALPHA_ROMAN" | "BULLET_CHECKBOX";
+export type BulletPreset = "BULLET_DISC_CIRCLE_SQUARE" | "NUMBERED_DECIMAL_ALPHA_ROMAN";
 
 export interface CreateParagraphBulletsRequest {
   createParagraphBullets: {
