@@ -193,7 +193,7 @@ function appendList(list: List, depth: number, cursor: number, ctx: Context): nu
   const requestStart = ctx.requests.length;
 
   for (const item of list.children) {
-    cursor = appendListItem(item, depth, cursor, ctx);
+    cursor = appendListItem(item, depth, cursor, ctx, task);
   }
 
   if (depth === 0 && cursor > listStart) {
@@ -207,16 +207,17 @@ function appendList(list: List, depth: number, cursor: number, ctx: Context): nu
   return cursor;
 }
 
-function appendListItem(item: ListItem, depth: number, cursor: number, ctx: Context): number {
+function appendListItem(item: ListItem, depth: number, cursor: number, ctx: Context, taskList: boolean): number {
   let first = true;
+  const prefix = itemPrefix(item, taskList);
   for (const child of item.children) {
     if (child.type === "list") {
       cursor = appendList(child, depth + 1, cursor, ctx);
     } else if (child.type === "paragraph") {
-      // A checked/unchecked glyph leads the item's first line so completion state
-      // survives (a native checklist bullet can't be pre-checked via the API).
-      const inline =
-        first && typeof item.checked === "boolean" ? [taskGlyph(item.checked), ...child.children] : child.children;
+      // A task list has no bullet preset (the glyph is the marker), so the leading
+      // glyph goes on the item's first line — including a plain "•" for any non-task
+      // item mixed into the list, so it isn't left unmarked.
+      const inline = first && prefix ? [textNode(prefix), ...child.children] : child.children;
       cursor = appendParagraph(inline, cursor, ctx, depth, listItemParagraphStyle());
       first = false;
     } else {
@@ -232,9 +233,19 @@ function isTaskList(list: List): boolean {
   return list.children.some((item) => typeof item.checked === "boolean");
 }
 
-/** Leading glyph for a task item, preserving its checked/unchecked state as text. */
-function taskGlyph(checked: boolean): PhrasingContent {
-  return { type: "text", value: checked ? "☑ " : "☐ " };
+/**
+ * Leading text marker for an item in a task list (which uses no bullet preset):
+ * a checkbox glyph preserving checked state, or a plain bullet for a non-task
+ * item mixed into the list. Non-task lists return undefined — their marker comes
+ * from a `createParagraphBullets` preset instead.
+ */
+function itemPrefix(item: ListItem, taskList: boolean): string | undefined {
+  if (typeof item.checked === "boolean") return item.checked ? "☑ " : "☐ ";
+  return taskList ? "• " : undefined;
+}
+
+function textNode(value: string): PhrasingContent {
+  return { type: "text", value };
 }
 
 // Known limitation: one preset applies to the whole (possibly nested) list, so a

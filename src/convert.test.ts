@@ -162,6 +162,13 @@ describe("convert lists", () => {
     expect(bullets(reqs)).toHaveLength(0);
   });
 
+  test("a plain item mixed into a task list still gets a marker", () => {
+    const reqs = convert(parseMarkdown("- [x] done\n- plain item\n"));
+    // The plain item is prefixed with a bullet glyph, never left unmarked.
+    expect(insertedText(reqs)).toBe("☑ done\n• plain item\n");
+    expect(bullets(reqs)).toHaveLength(0);
+  });
+
   test("bullet requests come last and in reverse document order", () => {
     const reqs = convert(parseMarkdown("- a\n\ntext\n\n- b\n"));
     const bs = bullets(reqs);
