@@ -1,5 +1,9 @@
 # md2gd
 
+[![CI](https://img.shields.io/github/actions/workflow/status/cniska/md2gd/ci.yml?style=flat&label=ci)](https://github.com/cniska/md2gd/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/package-json/v/cniska/md2gd?style=flat)](https://github.com/cniska/md2gd/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue?style=flat)](LICENSE)
+
 Convert a Markdown file into a professionally styled Google Doc from the command line.
 
 ```
