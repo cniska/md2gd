@@ -10,5 +10,5 @@ coverage/
 # OAuth client secrets, cached tokens, and any credentials (never commit)
 *.credentials.json
 client_secret*.json
-tokens.json
+token.json
 .md2gd/
