@@ -50,6 +50,15 @@ describe("buildTablePlan", () => {
     expect(sev.magnitude + finding.magnitude).toBeLessThanOrEqual(468);
   });
 
+  test("when columns can't all fit, short columns hold the minimum and nothing overflows", () => {
+    // Two wide columns plus two short ones over-subscribe the page.
+    const wide = "y".repeat(300);
+    const md = ["| A | B | C | D |", "|---|---|---|---|", `| ${wide} | ${wide} | ok | ok |`, ""].join("\n");
+    const widths = firstTable(md).columnWidths.map((d) => d.magnitude);
+    for (const w of widths) expect(w).toBeGreaterThanOrEqual(54);
+    expect(widths.reduce((s, w) => s + w, 0)).toBeLessThanOrEqual(468);
+  });
+
   test("a longer-content column gets a wider column", () => {
     const md = ["| K | Description |", "|---|---|", "| a | this cell has much longer content than the key |", ""].join(
       "\n",

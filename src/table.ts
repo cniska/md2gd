@@ -92,11 +92,19 @@ function distributeColumnWidths(cells: CellPlan[][], columns: number): Dimension
   );
   const floors = Array.from({ length: columns }, (_, col) => naturalWidth(cells, col));
 
-  // If the columns' natural floors already exceed the page, share it in proportion
-  // to those floors — every column shrinks together rather than one overflowing.
+  // If the columns' natural floors already exceed the page, we can't grant every
+  // column its full natural width without overflowing. Guarantee the readable
+  // minimum per column (when the page allows), then share the remaining width by
+  // how much each column wanted beyond the minimum — so short columns stay at the
+  // floor rather than being scaled into a sliver, and nothing overflows.
   const floorSum = floors.reduce((sum, f) => sum + f, 0);
   if (floorSum >= TABLE_CONTENT_WIDTH_PT) {
-    return floors.map((f) => pt(round((TABLE_CONTENT_WIDTH_PT * f) / floorSum)));
+    if (columns * MIN_COLUMN_WIDTH_PT >= TABLE_CONTENT_WIDTH_PT) {
+      return floors.map(() => pt(round(TABLE_CONTENT_WIDTH_PT / columns)));
+    }
+    const spare = TABLE_CONTENT_WIDTH_PT - columns * MIN_COLUMN_WIDTH_PT;
+    const excessTotal = floors.reduce((sum, f) => sum + (f - MIN_COLUMN_WIDTH_PT), 0);
+    return floors.map((f) => pt(round(MIN_COLUMN_WIDTH_PT + (spare * (f - MIN_COLUMN_WIDTH_PT)) / excessTotal)));
   }
 
   const widths = new Array<number>(columns).fill(0);
