@@ -49,17 +49,41 @@ Your browser opens for consent. Approve it, and the token is cached locally. Aft
 
 ```
 md2gd <file.md> [--title <title>] [--open]
+md2gd <file.md> --update [<url|id>] [--title <title>] [--open]
 ```
 
 - `--title <title>` — override the document title (defaults to the file's top `# H1`, else its filename).
-- `--open` — open the created doc in your browser after converting.
+- `--update [<url|id>]` — re-render into an existing doc instead of creating a new one (see below).
+- `--open` — open the doc in your browser afterwards.
 - `md2gd --help` / `md2gd --version`.
 
-Generated docs are placed in an `md2gd` folder in your Drive. Each run creates a new document and prints its URL.
+Generated docs are placed in an `md2gd` folder in your Drive. By default each run creates a new document and prints its URL.
+
+## Updating a doc in place (stable URL)
+
+The usual loop is *edit the Markdown, regenerate the Doc*. `--update` re-renders into the **same** document so its URL, Drive location, and any shares stay put:
+
+```
+md2gd ~/notes/report.md            # first run — creates the doc, remembers it
+md2gd ~/notes/report.md --update   # re-renders into that same doc, same URL
+```
+
+With no argument, `--update` targets the doc md2gd previously created from that file (remembered in `~/.md2gd/config.json`). Pass an explicit target — a full Docs URL or a bare id — to override:
+
+```
+md2gd report.md --update https://docs.google.com/document/d/1AbC…/edit
+```
+
+A plain run (no `--update`) never overwrites: if a doc already exists for the file, md2gd still creates a new one and prints a reminder that `--update` would overwrite instead.
+
+**Limits, by design:**
+
+- md2gd can only update docs **it created** (it uses the narrow `drive.file` scope). Pointing `--update` at a doc you made by hand in the Docs UI fails with a clear message rather than editing it.
+- Updating **clears and rewrites** the body. Google Docs **comments anchored to the old content will orphan**, and the rewrite is **not atomic** — an interrupted run can leave the doc partially rewritten. For the regenerate-a-report loop this is the right trade; for a heavily commented doc, prefer a fresh conversion.
 
 ## What it renders
 
-Headings, **bold**/*italic*/~~strikethrough~~, `inline code` and fenced code blocks, links, ordered/unordered/nested and task lists, blockquotes, horizontal rules, and tables (with sized columns, padded cells, and a shaded header row). Emoji and non-ASCII text are preserved.
+Headings, **bold**/*italic*/~~strikethrough~~, `inline code` and fenced code blocks, links, ordered/unordered/nested and task lists, blockquotes, and tables (with sized columns, padded cells, and a shaded header row). Emoji and non-ASCII text are preserved. Horizontal rules (`---`) are intentionally ignored — heading spacing already separates sections.
 
 Not yet supported (they degrade to readable text): embedded local images, footnotes, and per-level markers for mixed-type nested lists.
 
@@ -69,6 +93,7 @@ md2gd stores everything under `~/.md2gd/` with owner-only permissions:
 
 - `client_secret.json` — your OAuth client (copied in by `init`)
 - `token.json` — the cached access/refresh token
+- `config.json` — remembers which doc was created from each file, for `--update`
 
 Nothing here is ever transmitted anywhere except Google's own APIs.
 
