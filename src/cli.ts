@@ -1,9 +1,11 @@
 #!/usr/bin/env bun
+import type { Command } from "./args";
 import { parseArgs } from "./args";
 import { documentUrl, GoogleDocsClient } from "./google";
 import { loadStoredClientSecret, runInit } from "./init";
+import { lookupDoc, recordDoc } from "./mapping";
 import { getAccessToken } from "./oauth";
-import { convertFile } from "./pipeline";
+import { convertFile, resolveUpdateTarget, updateFile } from "./pipeline";
 import { NAME, VERSION } from "./version";
 
 const HELP = `${NAME} v${VERSION}
@@ -11,14 +13,17 @@ const HELP = `${NAME} v${VERSION}
 Convert a Markdown file into a professionally styled Google Doc.
 
 Usage:
-  ${NAME} init --client <client_secret.json>   One-time setup (browser consent)
-  ${NAME} <file.md> [--title <t>] [--open]     Convert and print the doc URL
+  ${NAME} init --client <client_secret.json>       One-time setup (browser consent)
+  ${NAME} <file.md> [--title <t>] [--open]         Convert into a new doc, print its URL
+  ${NAME} <file.md> --update [<url|id>] [--title <t>]  Re-render into an existing doc
 
 Options:
-  --title <t>      Override the document title (defaults to the H1 or filename)
-  --open           Open the created doc in your browser
-  -h, --help       Show this help
-  -V, --version    Show version
+  --title <t>         Override the document title (defaults to the H1 or filename)
+  --update [<url|id>] Re-render into an existing doc instead of creating a new one.
+                      With no argument, targets the doc previously made from this file.
+  --open              Open the doc in your browser
+  -h, --help          Show this help
+  -V, --version       Show version
 `;
 
 function fail(message: string): void {
@@ -26,13 +31,33 @@ function fail(message: string): void {
   process.exitCode = 1;
 }
 
-async function runConvert(file: string, title: string | undefined, open: boolean): Promise<void> {
-  const secret = await loadStoredClientSecret();
-  const client = new GoogleDocsClient({ getToken: () => getAccessToken(secret, Date.now()) });
-  const documentId = await convertFile(file, { title }, client);
-  const url = documentUrl(documentId);
+function finish(url: string, open: boolean): void {
   process.stdout.write(`${url}\n`);
   if (open) Bun.spawn(["open", url]);
+}
+
+async function runConvert(command: Extract<Command, { kind: "convert" }>): Promise<void> {
+  const { file, title, open, update, updateTarget } = command;
+  const secret = await loadStoredClientSecret();
+  const client = new GoogleDocsClient({ getToken: () => getAccessToken(secret, Date.now()) });
+
+  if (update) {
+    // Stable-URL mode: re-render in place, so the URL and Drive location persist.
+    const documentId = await resolveUpdateTarget(file, updateTarget);
+    await updateFile(file, { title }, client, documentId);
+    finish(documentUrl(documentId), open);
+    return;
+  }
+
+  // New doc. Note any prior doc from this file (so the destructive overwrite is
+  // never implicit — the user must opt in with --update), then record the new one.
+  const previous = await lookupDoc(file);
+  const documentId = await convertFile(file, { title }, client);
+  await recordDoc(file, documentId);
+  if (previous) {
+    process.stderr.write(`${NAME}: previously created ${documentUrl(previous)} — pass --update to overwrite it\n`);
+  }
+  finish(documentUrl(documentId), open);
 }
 
 async function main(): Promise<void> {
@@ -53,7 +78,7 @@ async function main(): Promise<void> {
         await runInit(command.clientPath, (message) => process.stdout.write(`${message}\n`));
         return;
       case "convert":
-        await runConvert(command.file, command.title, command.open);
+        await runConvert(command);
         return;
     }
   } catch (error) {
