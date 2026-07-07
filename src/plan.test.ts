@@ -20,4 +20,12 @@ describe("planDocument", () => {
     const segments = planDocument(parseMarkdown(md));
     expect(segments.map((s) => s.kind)).toEqual(["table", "table"]);
   });
+
+  test("only a linear run that follows a table is flagged afterTable", () => {
+    const md = "Intro.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nOutro.\n";
+    const segments = planDocument(parseMarkdown(md));
+    const linear = segments.filter((s) => s.kind === "linear");
+    expect(linear[0]?.kind === "linear" && linear[0].afterTable).toBe(false);
+    expect(linear[1]?.kind === "linear" && linear[1].afterTable).toBe(true);
+  });
 });

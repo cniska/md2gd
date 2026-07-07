@@ -5,6 +5,8 @@ import { buildTablePlan, type TablePlan } from "./table";
 export interface LinearSegment {
   kind: "linear";
   nodes: RootContent[];
+  /** True when this run immediately follows a table, so its first block needs space above it. */
+  afterTable: boolean;
 }
 
 /** A table, resolved against a live document GET at execution time. */
@@ -28,7 +30,8 @@ export function planDocument(root: Root): Segment[] {
 
   const flush = (): void => {
     if (linear.length > 0) {
-      segments.push({ kind: "linear", nodes: linear });
+      const afterTable = segments[segments.length - 1]?.kind === "table";
+      segments.push({ kind: "linear", nodes: linear, afterTable });
       linear = [];
     }
   };

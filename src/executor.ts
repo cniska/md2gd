@@ -61,7 +61,7 @@ async function fillSegments(client: DocsClient, documentId: string, segments: Se
 
   for (const segment of segments) {
     if (segment.kind === "linear") {
-      const { requests, endIndex } = convertNodes(segment.nodes, cursor);
+      const { requests, endIndex } = convertNodes(segment.nodes, cursor, { afterTable: segment.afterTable });
       if (requests.length > 0) await client.batchUpdate(documentId, requests);
       cursor = endIndex;
     } else {

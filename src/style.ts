@@ -127,6 +127,9 @@ export const preTableParagraphStyle: ParagraphStyleSpec = spec({
 /** Small font on that injected newline, so the spacer above a table stays subtle. */
 export const preTableTextStyle: TextStyle = { fontSize: pt(6) };
 
+/** Space above the first block after a table, since a table carries no space below itself. */
+export const AFTER_TABLE_SPACE: Dimension = pt(10);
+
 /** Subtle grey fill distinguishing a table's header row. */
 export const HEADER_SHADING = { color: { rgbColor: { red: 0.9, green: 0.9, blue: 0.9 } } };
 

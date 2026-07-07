@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { convert } from "./convert";
+import { convert, convertNodes } from "./convert";
 import type {
   CreateParagraphBulletsRequest,
   InsertTextRequest,
@@ -239,6 +239,22 @@ describe("convert typography and styling coverage", () => {
     const reqs = convert(parseMarkdown("**Note:** this is regular prose.\n"));
     const style = paragraphStyles(reqs)[0]?.updateParagraphStyle.paragraphStyle;
     expect(style?.keepWithNext).toBeUndefined();
+  });
+
+  test("a run following a table gets space above its first block", () => {
+    const { requests } = convertNodes(parseMarkdown("Outro.\n").children, 1, { afterTable: true });
+    const first = requests.find((r) => "updateParagraphStyle" in r);
+    const style = first && "updateParagraphStyle" in first ? first.updateParagraphStyle : undefined;
+    expect(style?.paragraphStyle.spaceAbove?.magnitude).toBeGreaterThanOrEqual(10);
+    expect(style?.fields).toContain("spaceAbove");
+  });
+
+  test("a first heading after a table keeps its own larger space above", () => {
+    const { requests } = convertNodes(parseMarkdown("## Next\n").children, 1, { afterTable: true });
+    const first = requests.find((r) => "updateParagraphStyle" in r);
+    const style = first && "updateParagraphStyle" in first ? first.updateParagraphStyle : undefined;
+    // HEADING_2's 16pt is not reduced to the 10pt floor.
+    expect(style?.paragraphStyle.spaceAbove?.magnitude).toBeGreaterThan(10);
   });
 
   test("headings carry more space above than below so they group with their content", () => {

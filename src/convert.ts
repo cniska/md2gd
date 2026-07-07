@@ -1,8 +1,16 @@
 import type { Blockquote, Code, List, ListItem, PhrasingContent, Root, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
-import { BODY_START_INDEX, type BulletPreset, type DocRequest, fieldMask } from "./docs";
+import {
+  BODY_START_INDEX,
+  type BulletPreset,
+  type Dimension,
+  type DocRequest,
+  fieldMask,
+  type UpdateParagraphStyleRequest,
+} from "./docs";
 import { inlineRuns, LINE_BREAK } from "./inline";
 import {
+  AFTER_TABLE_SPACE,
   blockquoteParagraphStyle,
   bodyFontTextStyle,
   captionParagraphStyle,
@@ -42,13 +50,21 @@ export function convert(root: Root): DocRequest[] {
  * indices. Offsets come from JS string length — UTF-16 code units, matching the
  * Docs API — so emoji (surrogate pairs) count correctly. Pure and offline.
  */
-export function convertNodes(nodes: RootContent[], startIndex: number): { requests: DocRequest[]; endIndex: number } {
+export function convertNodes(
+  nodes: RootContent[],
+  startIndex: number,
+  options: { afterTable?: boolean } = {},
+): { requests: DocRequest[]; endIndex: number } {
   const ctx: Context = { requests: [], bullets: [] };
   let cursor = startIndex;
 
   for (const node of nodes) {
     cursor = appendBlock(node, cursor, ctx);
   }
+
+  // A run following a table needs space above its first block, since a table
+  // carries no space below and a plain paragraph no space above.
+  if (options.afterTable) ensureSpaceAbove(ctx.requests, AFTER_TABLE_SPACE);
 
   // Bulleting strips the leading tabs used to signal nesting, which shifts every
   // index after the list. Emitting bullet requests last and in reverse document
@@ -88,6 +104,22 @@ function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
       throw new Error("md2gd: tables are resolved by the document planner, not the linear converter");
     default:
       return appendRaw(mdastToString(node), cursor, ctx, 0, normalParagraphStyle());
+  }
+}
+
+/**
+ * Raise the first paragraph's space-above to at least `floor`, cloning the style
+ * so the shared spec object is never mutated. A first block that already has more
+ * (e.g. a heading or caption) is left untouched.
+ */
+function ensureSpaceAbove(requests: DocRequest[], floor: Dimension): void {
+  const first = requests.find((r): r is UpdateParagraphStyleRequest => "updateParagraphStyle" in r);
+  if (!first) return;
+  const style = first.updateParagraphStyle.paragraphStyle;
+  if ((style.spaceAbove?.magnitude ?? 0) >= floor.magnitude) return;
+  first.updateParagraphStyle.paragraphStyle = { ...style, spaceAbove: floor };
+  if (!first.updateParagraphStyle.fields.split(",").includes("spaceAbove")) {
+    first.updateParagraphStyle.fields = `${first.updateParagraphStyle.fields},spaceAbove`;
   }
 }
 
