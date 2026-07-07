@@ -2,7 +2,7 @@
 
 > A command-line tool that converts a Markdown file into a professionally styled Google Docs document in the user's Google Drive, and prints a link to it.
 
-This document specifies **what** the tool must do, not **how**. Implementation choices (libraries, whether to go through the Google Docs API directly, via an intermediate format, or via native Markdown import) are left to the building agent, provided the requirements and acceptance criteria below are met. The stack itself is fixed (see §8a).
+This document specifies **what** the tool must do, not **how**. Implementation choices are left to the building agent, provided the requirements and acceptance criteria below are met. The stack itself is fixed (see §8a); decisions deliberately left open are called out in §9. The how — offset math, table-fill ordering, batch structuring — lives in `docs/architecture.md`, not here.
 
 ---
 
@@ -64,12 +64,22 @@ The tool must faithfully render the following, mapping each to the closest nativ
 
 ### 2.4 Configuration & options (CLI)
 
+The complete command surface, enumerated once (each line's behavior is specified by the requirements below):
+
+```
+md2gd init [--client <client_secret.json>]         One-time setup (browser consent)
+md2gd <file.md> [--title <t>] [--open]             Convert into a new doc, print its URL
+md2gd <file.md> --update [<url|id>] [--title <t>]  Re-render into an existing doc
+md2gd --help | -h | help                           Usage
+md2gd --version | -V | version                     Version
+```
+
 - **FR-21a** — Provide an `md2gd init` command for one-time setup: it accepts the user's downloaded OAuth **Desktop client** secret (e.g. `md2gd init --client client_secret.json`), stores it, and runs the consent flow once (AU-1), caching the token. After `init`, all conversion is pure command-line. Rationale: Google does not permit plain API keys for Drive/Docs writes, so a per-user OAuth token is required; `init` makes acquiring it a single explicit step rather than a hidden first-run side effect.
 - **FR-22** — Provide `--help` describing usage, arguments, and options.
 - **FR-23** — Provide `--version`.
 - **FR-24** — Allow overriding the document title (per FR-4).
 - **FR-25** — Docs must land in a dedicated location rather than the Drive root. **Constraint (see AU-3):** v1 uses the narrow `drive.file` scope, which only grants access to files the tool itself creates — it cannot move docs into an arbitrary pre-existing folder. Therefore the tool must create and remember its **own** default folder (e.g. "md2gd") and place docs there. Targeting an arbitrary user-chosen existing folder is **descoped from v1** (would require the broad, verification-triggering `drive` scope); it may return later as an explicit opt-in.
-- **FR-26** — Support a persistent config file for defaults (e.g. default title behavior) so the user need not repeat options every run. Config location must follow macOS conventions.
+- **FR-26** — Persist tool state across runs in a user-scoped config file so invocations coordinate (v1 stores the file→doc mapping of FR-42). The file lives in a user-scoped location with restrictive permissions (AU-2), is forward-compatible (unknown keys are preserved rather than clobbered so later versions can add settings), and a corrupt file must never abort a conversion. The concrete on-disk layout is enumerated in §2.7.
 - **FR-27** — Provide a way to open the created doc in the browser on demand (e.g. `--open`), while the default remains print-link-only.
 - **FR-27a** — Provide an `--update [<url-or-id>]` option that re-renders into an existing document rather than creating a new one (see §2.6). With no argument, it targets the doc previously created from the same input file; with an argument, it targets that specific doc.
 
@@ -91,7 +101,7 @@ These are derived from analyzing the reference due-diligence report and are the 
 - **FR-33** — **Tightly-grouped metadata blocks.** A run of consecutive single-line `**Key:** value` paragraphs (the header block) should read as a grouped block with tight spacing, not with full inter-paragraph gaps between each line — while normal body paragraphs still get the spacing of ST-11.
 - **FR-34** — **Bold-only lines are captions, not headings.** Lines that are entirely bold (e.g. `**Customer journey**` preceding a table) are sub-labels. They must render as styled bold text with caption spacing — space above to separate them from preceding content and tight space below so they group with the element they introduce (typically a table) — and must **not** be promoted into the document heading outline.
 - **FR-35** — **Adjacent tables with differing shapes.** The document places tables of different column counts near each other (3-col then 2-col) and two tables separated only by a bold caption. Each table's column widths must be sized independently, and consecutive tables must never merge into one.
-- **FR-36** — **Wide/long table cells.** Description cells can hold paragraph-length text. Column widths must distribute so long-text columns get the space, cells wrap cleanly, and the table never overflows the page width (per ST-4). Conversely, a short-content column (e.g. a one-word status/severity column) must be given enough width to hold its widest cell on a single line rather than being pinned so narrow that short values wrap — the width floor is derived from content, not a fixed constant.
+- **FR-36** — **Wide/long table cells.** Description cells can hold paragraph-length text. Column widths must distribute so long-text columns get the space, cells wrap cleanly, and the table never overflows the page width (per ST-4). Conversely, a short-content column (e.g. a one-word status/severity column) must be wide enough to hold its widest cell on a single line rather than pinned so narrow that short values wrap.
 - **FR-37** — **Bare domains in prose.** URLs written without a scheme or link syntax (e.g. `partybook-one.vercel.app`) appear as plain text. The tool must handle these consistently per the §9 auto-linking policy and never mangle them.
 
 ### 2.6 Updating an existing document ("stable URL" mode)
@@ -100,9 +110,9 @@ The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fres
 
 **Scope constraint (inherits AU-3):** update works **only for documents md2gd itself created**, because v1 stays on the narrow `drive.file` scope. Re-rendering a doc the user made by hand in the Docs UI would require the broad `drive` scope (verification-triggering) and is **out of scope**. This is the right fit for the target loop — regenerating a report first produced by md2gd.
 
-- **FR-38** — **Clear-and-rewrite semantics.** `--update` targets an existing doc, clears its body, and re-runs the normal conversion into it. Content diffing / in-place patching is explicitly **not** attempted — a cleared doc is indistinguishable from a fresh one, so the create-and-fill pipeline (including the two-phase table flow) is reused unchanged.
+- **FR-38** — **Clear-and-rewrite semantics.** `--update` targets an existing doc, clears its body, and re-runs the normal conversion into it. Content diffing / in-place patching is explicitly **not** attempted: a cleared doc must render identically to a freshly created one from the same Markdown.
 - **FR-39** — **Read before destroy.** The tool must GET the target document *before* issuing any destructive call, so an auth failure, 404, or permission error leaves the target intact and the run exits non-zero with a clear message (per NF-3).
-- **FR-40** — **No style bleed.** After clearing, the leftover paragraph must be reset (to `NORMAL_TEXT`, bullets removed) so the previous render's trailing heading/list style does not leak into the new content. The final (undeletable) trailing newline is preserved; an already-empty body skips the delete.
+- **FR-40** — **No style bleed.** After clearing, the surviving paragraph must be reset to default body style with list markers removed, so the previous render's trailing heading/list style does not leak into the new content. An already-empty body must be handled without error.
 - **FR-41** — **Title stays in sync.** If the derived/overridden title differs from the target doc's current name, the tool must rename the Drive file to match, so the doc's title does not go stale after an update.
 - **FR-42** — **File→doc mapping (hybrid UX).**
   - On a successful *create*, record `realpath(input) → documentId` in the config location (§2.4, FR-26).
@@ -110,6 +120,16 @@ The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fres
   - A plain run (no `--update`) when a mapping already exists still **creates a new doc**, but prints a hint — e.g. `previously created <url> — pass --update to overwrite` — so the destructive path is never taken implicitly.
   - A stale mapping (target trashed or not found) must produce a clear error, not silently diverge into a new doc.
 - **FR-43** — **Honest limitations documented, not engineered around.** Google Docs comments anchored to cleared ranges will orphan, and a multi-round update is not atomic (a mid-run failure can leave the doc partially rewritten). These are acceptable for the single-user regenerate loop; they must be documented (README) rather than solved in v1. Targeting a hand-made doc must fail with an actionable message (e.g. `md2gd can only update documents it created`) rather than a raw `drive.file` 404.
+
+### 2.7 Config & credential storage
+
+All persisted state lives under a single user-scoped directory (v1: `~/.md2gd/`), created with owner-only permissions (AU-2). It holds:
+
+- **`client_secret.json`** — the OAuth Desktop client secret supplied to `md2gd init` (FR-21a). Owner-only.
+- **`token.json`** — the cached OAuth token, including the refresh token (AU-4). Owner-only.
+- **`config.json`** — tool state (FR-26). A JSON object whose `docs` key maps each input file's canonical absolute path to the id of the document last created from it (FR-42): `{ "docs": { "/abs/path/report.md": "<documentId>" } }`. Unknown top-level keys are preserved on write.
+
+Deleting this directory resets the tool to its unconfigured state (AU-5). The layout and location must be documented (D-2).
 
 ---
 
@@ -147,7 +167,7 @@ Styling should be centralized/configurable enough that the default look can be a
 - **AU-2** — Cached credentials/tokens must be stored securely in a user-scoped location with appropriately restrictive file permissions, and must never be committed to the repository.
 - **AU-3** — Request the **minimum OAuth scopes** necessary. v1 uses only `drive.file` (access limited to files the tool creates) plus the Docs scope needed for `documents.create`/`batchUpdate`. Do **not** request the broad `drive` (all-files) scope — it is a sensitive scope that triggers Google verification and is unnecessary given the FR-25 own-folder model.
 - **AU-4** — Tokens must refresh automatically when expired without forcing a full re-consent, until revoked.
-- **AU-5** — Provide a documented way to reset/revoke local credentials (e.g. a `logout`/`reset-auth` command or deleting a documented file).
+- **AU-5** — Resetting local credentials must be possible and documented. v1 does this by deleting the config directory (§2.7), which removes the cached token and stored client secret; the next `init` re-consents from scratch.
 - **AU-6** — The tool must document the one-time Google Cloud project / OAuth client setup the user must perform, in clear step-by-step form (see §8). The docs **must** call out: (a) **publish the OAuth consent screen to "Production"** — leaving it in "Testing" causes Google to expire refresh tokens after 7 days, silently breaking AU-4; unverified-Production is fine for a personal tool, and (b) staying on `drive.file` keeps the app out of sensitive-scope verification entirely.
 - **AU-7** — No document content or credentials may be sent to any third-party service other than Google's own APIs. All processing happens locally or within the user's Google account.
 - **AU-8** — The loopback consent callback must be protected against authorization-code injection: a random `state` is verified on return and PKCE (S256) is used. Denied consent and a timeout must both terminate `init` cleanly rather than hang.
@@ -173,7 +193,7 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 - **NF-10** — Every §2.5 edge case (FR-28 through FR-37) must have a dedicated test proving correct output: rich content in cells, emoji preservation, literal chars in code spans, Unicode typography survival, soft-break handling, caption-not-heading, per-table column sizing, no-overflow, bare-domain handling. These are the constructs that regress silently, so they are tested explicitly.
 - **NF-11** — The §3.1 styling pain points (ST-11 through ST-14) must be covered by tests asserting the corresponding paragraph/table style fields are emitted (paragraph space-after, space-after-blocks, cell padding, space-before-headings).
 - **NF-12** — Tests must be deterministic and runnable offline (no dependency on live Google APIs or cached credentials). Any real end-to-end check against Google is a separate, opt-in step, not part of the default suite.
-- **NF-13** — The update path (§2.6) must be unit-tested against the mocked Google boundary: the clear-body requests (delete over `[1, end-1]`, paragraph reset, empty-body skip), the GET-before-destroy ordering, the rename-on-title-change, and the mapping lookup / override / stale-mapping behavior. As with NF-9, tests assert the *requests produced*, not just that code runs.
+- **NF-13** — The update path (§2.6) must be unit-tested against the mocked Google boundary: the body-clear requests (including the style reset and the already-empty-body case), the GET-before-destroy ordering, the rename-on-title-change, and the mapping lookup / override / stale-mapping behavior. As with NF-9, tests assert the *requests produced*, not just that code runs.
 
 ---
 
@@ -197,7 +217,7 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 The tool is considered done for v1 when all of the following hold:
 
 - **AC-1** — Running `md2gd path/to/report.md` (the reference document) with valid auth produces a new Google Doc and prints its URL.
-- **AC-2** — Opening that URL shows a document where: the title is correct; all headings appear in the Google Docs outline pane at the right levels; every table renders with a styled header row and no overflow; bold/italic/links/inline code/emoji render correctly; horizontal rules appear as dividers; bulleted lists render with correct nesting.
+- **AC-2** — Opening that URL shows a document where: the title is correct; all headings appear in the Google Docs outline pane at the right levels; every table renders with a styled header row and no overflow; bold/italic/links/inline code/emoji render correctly; horizontal rules produce no output (per FR-17); bulleted lists render with correct nesting.
 - **AC-3** — A test document exercising the full feature set in §2.3 (images, code blocks, blockquotes, task lists, nested numbered+bulleted lists, footnotes, strikethrough) renders each element correctly or degrades gracefully per FR-21, with no crash.
 - **AC-4** — `md2gd init` completes auth via browser consent once; subsequent conversions reuse the cached token with no prompt and no browser.
 - **AC-5** — The visual result is subjectively "professional" per §3 and at least matches `md2doc.com` output quality on the reference document.
@@ -244,12 +264,4 @@ These are explicitly **not** constrained by this spec; choose what best satisfie
 - **Soft line breaks (FR-32):** render a single newline within a paragraph as a line break (i.e. treat source line breaks as intended). The reference document is not hard-wrapped at a column width, so this reproduces author intent without side effects. If a future document turns out to be hard-wrapped, revisit.
 - **Auto-linking (FR-37):** do **not** invent hyperlinks from bare domains or fabricate link targets. Only explicit Markdown links (`[text](url)`) and explicit bare URLs with a scheme (`https://…`) become clickable links; a scheme-less domain like `partybook-one.vercel.app` renders as plain text, unchanged.
 
-## 10. Recommended approach & first spike (advisory)
-
-Not binding, but the reviewed recommendation the building agent should start from:
-
-- **Conversion strategy: direct Google Docs API `batchUpdate`** — reject native Markdown import and the pandoc→docx→convert path. Both are black boxes that fail exactly on §3/§3.1 (no per-table column sizing, no cell-padding control, no deterministic spacing) and offer no fix, only workarounds. `batchUpdate` maps each hard requirement to a first-class field: `updateTableColumnProperties` (FIXED_WIDTH per table → FR-35/36), `updateTableCellStyle` (padding + header shading → ST-4/ST-13), `updateParagraphStyle` `spaceAbove`/`spaceBelow` from one central style table (ST-9/ST-11/ST-12/ST-14/NF-6).
-- **Markdown parsing:** an AST-based parser (the `remark`/`mdast` ecosystem — `remark-parse` + `remark-gfm`, with a soft-break option for FR-32) runs fine under Bun. Rendering from a parsed AST makes FR-30 (literal chars in code spans), FR-33, and FR-34 fall out for free — cover them with tests, don't budget build effort for them.
-- **Google API layer under Bun (per TS-7):** prefer the REST endpoints over `fetch` for the OAuth desktop flow and `batchUpdate`; only use an official SDK if it runs cleanly under Bun. This keeps the stack lean and Bun-native.
-- **Known primary fragility:** Docs API offsets are **UTF-16 code units** — an emoji is 2 units, ZWJ sequences more — and a single miscount corrupts every later offset in a document full of em-dashes and emoji. Tables compound it (cells hold implicit paragraphs; filling them shifts indices). Standard mitigations: fill cells in reverse order, and/or run structure-creation and cell-population as separate `batchUpdate` rounds with a document GET between (extra round trips are well within NF-2).
-- **First spike to de-risk before building the whole tool:** render the reference document's 16-row **Security findings table** end-to-end via `batchUpdate` — emoji-leading cells, bold lead-ins with em-dashes, inline code, one paragraph-length column, with fixed column widths, cell padding, and header shading. It exercises every risky mechanism at once (UTF-16 index math over emoji, cell-fill ordering, column-width computation, styled runs inside cells). If that table comes out clean and reproducible, the rest is well-trodden plumbing.
+The implementation approach, the UTF-16 offset hazard, and the two-phase table flow are non-normative and documented in `docs/architecture.md`.
