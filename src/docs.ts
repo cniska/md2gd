@@ -52,6 +52,8 @@ export interface ParagraphStyle {
   shading?: Shading;
   borderLeft?: ParagraphBorder;
   borderBottom?: ParagraphBorder;
+  /** Keep this paragraph on the same page as the one that follows it. */
+  keepWithNext?: boolean;
 }
 
 export interface WeightedFontFamily {

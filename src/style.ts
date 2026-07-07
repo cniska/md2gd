@@ -47,6 +47,23 @@ export function normalParagraphStyle(): ParagraphStyleSpec {
   return NORMAL;
 }
 
+/**
+ * A bold-only line (e.g. `**Customer journey**` above a table) is a caption, not
+ * a heading. It keeps body text (out of the outline) but gets space above to
+ * separate it from preceding content and tight space below so it groups with the
+ * element it introduces; `keepWithNext` stops a page break splitting the pair.
+ */
+const CAPTION: ParagraphStyleSpec = spec({
+  namedStyleType: "NORMAL_TEXT",
+  spaceAbove: pt(12),
+  spaceBelow: pt(4),
+  keepWithNext: true,
+});
+
+export function captionParagraphStyle(): ParagraphStyleSpec {
+  return CAPTION;
+}
+
 export function headingParagraphStyle(depth: number): ParagraphStyleSpec {
   const level = Math.min(Math.max(depth, 1), 6) as 1 | 2 | 3 | 4 | 5 | 6;
   const spacing = HEADING_SPACING[level];

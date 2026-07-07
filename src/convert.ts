@@ -5,6 +5,7 @@ import { inlineRuns, LINE_BREAK } from "./inline";
 import {
   blockquoteParagraphStyle,
   bodyFontTextStyle,
+  captionParagraphStyle,
   codeBlockParagraphStyle,
   codeBlockTextStyle,
   headingParagraphStyle,
@@ -67,8 +68,10 @@ function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
       return appendList(node, 0, cursor, ctx);
     case "heading":
       return appendParagraph(node.children, cursor, ctx, 0, headingParagraphStyle(node.depth));
-    case "paragraph":
-      return appendParagraph(node.children, cursor, ctx, 0, normalParagraphStyle());
+    case "paragraph": {
+      const style = isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
+      return appendParagraph(node.children, cursor, ctx, 0, style);
+    }
     case "code":
       return appendCode(node, cursor, ctx);
     case "blockquote":
@@ -86,6 +89,16 @@ function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
     default:
       return appendRaw(mdastToString(node), cursor, ctx, 0, normalParagraphStyle());
   }
+}
+
+/**
+ * A paragraph is a caption when every child is bold (`**…**`), ignoring
+ * whitespace-only text. Detected here rather than by lookahead because the
+ * caption ends a linear segment and the table it introduces is the next segment.
+ */
+function isBoldOnly(children: PhrasingContent[]): boolean {
+  const meaningful = children.filter((child) => child.type !== "text" || child.value.trim().length > 0);
+  return meaningful.length > 0 && meaningful.every((child) => child.type === "strong");
 }
 
 function appendCode(node: Code, cursor: number, ctx: Context): number {

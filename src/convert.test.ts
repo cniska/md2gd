@@ -222,12 +222,23 @@ describe("convert typography and styling coverage", () => {
     expect(insertedText(reqs)).toBe("A — B – C → D “q” ‘r’\n");
   });
 
-  test("a fully bold line stays body text and is not promoted to a heading", () => {
+  test("a fully bold line becomes a caption: bold body text, not a heading, spaced to group with what follows", () => {
     const reqs = convert(parseMarkdown("**Customer journey**\n"));
     const styles = paragraphStyles(reqs);
     expect(styles).toHaveLength(1);
-    expect(styles[0]?.updateParagraphStyle.paragraphStyle.namedStyleType).toBe("NORMAL_TEXT");
+    const style = styles[0]?.updateParagraphStyle.paragraphStyle;
+    // Stays body text (out of the outline), still bold.
+    expect(style?.namedStyleType).toBe("NORMAL_TEXT");
     expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.bold)).toBe(true);
+    // Caption spacing: space above to separate, tight below to group with the table.
+    expect(style?.spaceAbove?.magnitude).toBeGreaterThan(style?.spaceBelow?.magnitude ?? 0);
+    expect(style?.keepWithNext).toBe(true);
+  });
+
+  test("a mixed bold+plain line stays an ordinary paragraph, not a caption", () => {
+    const reqs = convert(parseMarkdown("**Note:** this is regular prose.\n"));
+    const style = paragraphStyles(reqs)[0]?.updateParagraphStyle.paragraphStyle;
+    expect(style?.keepWithNext).toBeUndefined();
   });
 
   test("headings carry more space above than below so they group with their content", () => {
