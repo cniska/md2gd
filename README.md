@@ -18,8 +18,9 @@ md2gd removes that step. One command, the same clean styling every time, and the
 ## Requirements
 
 - macOS or Linux
-- [Bun](https://bun.sh) 1.3+
 - A Google account
+
+The prebuilt binary bundles its runtime, so that's all you need to run md2gd. Building from source additionally needs [Bun](https://bun.sh) 1.3+.
 
 ## Install
 
@@ -34,6 +35,8 @@ Downloads the latest release binary for your platform into `~/.local/bin` and ve
 To update, re-run the same command — it always fetches the latest release.
 
 ### From source
+
+Requires [Bun](https://bun.sh) 1.3+.
 
 ```
 git clone https://github.com/cniska/md2gd.git
