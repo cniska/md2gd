@@ -1,5 +1,17 @@
-/** User-scoped location for md2gd's stored client secret, token, and config. */
-export const CONFIG_DIR = `${process.env.HOME ?? "."}/.md2gd`;
+/**
+ * User-scoped location for md2gd's stored client secret, token, and config.
+ * macOS keeps the established `~/.md2gd`; elsewhere (Linux) follows the XDG Base
+ * Directory spec: `$XDG_CONFIG_HOME/md2gd`, or `~/.config/md2gd` when unset.
+ */
+function resolveConfigDir(): string {
+  const home = process.env.HOME ?? ".";
+  if (process.platform === "darwin") return `${home}/.md2gd`;
+  const xdg = process.env.XDG_CONFIG_HOME;
+  const base = xdg?.startsWith("/") ? xdg : `${home}/.config`;
+  return `${base}/md2gd`;
+}
+
+export const CONFIG_DIR = resolveConfigDir();
 
 export const CLIENT_SECRET_PATH = `${CONFIG_DIR}/client_secret.json`;
 export const TOKEN_PATH = `${CONFIG_DIR}/token.json`;

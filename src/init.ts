@@ -1,6 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { CLIENT_SECRET_PATH, CONFIG_DIR, REDIRECT_HOST } from "./config";
 import { buildAuthUrl, type ClientSecret, createPkce, exchangeCode, parseClientSecret, randomToken } from "./oauth";
+import { openInBrowser } from "./open";
 import { saveToken } from "./tokens";
 
 /** How long to wait for the browser consent before giving up. */
@@ -88,6 +89,6 @@ function captureAuthCode(
 
     const authUrl = buildAuthUrl(client.clientId, redirectUri, { state, codeChallenge: challenge });
     log(`Opening your browser to authorize md2gd. If it doesn't open, visit:\n${authUrl}`);
-    Bun.spawn(["open", authUrl]);
+    openInBrowser(authUrl);
   });
 }

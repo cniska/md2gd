@@ -20,7 +20,7 @@ The result is a new, cleanly styled Google Doc in the user's Drive, with its URL
 
 ### Primary user
 
-A single technical user (the author) running the tool from a macOS terminal against their own personal Google account and Drive. Multi-user, server, or shared-team deployment is **out of scope** for v1.
+A single technical user (the author) running the tool from a macOS or Linux terminal against their own personal Google account and Drive. Multi-user, server, or shared-team deployment is **out of scope** for v1.
 
 ### Reference product
 
@@ -123,7 +123,7 @@ The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fres
 
 ### 2.7 Config & credential storage
 
-All persisted state lives under a single user-scoped directory (v1: `~/.md2gd/`), created with owner-only permissions (AU-2). It holds:
+All persisted state lives under a single user-scoped directory, created with owner-only permissions (AU-2). The location follows platform convention: `~/.md2gd/` on macOS, and `$XDG_CONFIG_HOME/md2gd` (default `~/.config/md2gd`) on Linux. It holds:
 
 - **`client_secret.json`** — the OAuth Desktop client secret supplied to `md2gd init` (FR-21a). Owner-only.
 - **`token.json`** — the cached OAuth token, including the refresh token (AU-4). Owner-only.
@@ -176,7 +176,7 @@ Styling should be centralized/configurable enough that the default look can be a
 
 ## 5. Non-functional requirements
 
-- **NF-1** — Single-command install/run on macOS with minimal prerequisites; any required runtime or external dependency must be clearly documented.
+- **NF-1** — Single-command install/run on macOS or Linux with minimal prerequisites; any required runtime or external dependency must be clearly documented.
 - **NF-2** — Convert a typical document (~400 lines, multiple tables, like the reference due-diligence report) in a few seconds, network round-trips aside.
 - **NF-3** — Clear, human-readable error messages for the common failure modes: no network, auth failure/expired consent, invalid file, Drive permission denied, API rate limiting. Errors must not dump raw stack traces as the primary output.
 - **NF-4** — Idempotent auth: running repeatedly does not create duplicate credentials or re-prompt unnecessarily.

@@ -5,6 +5,7 @@ import { documentUrl, GoogleDocsClient } from "./google";
 import { loadStoredClientSecret, runInit } from "./init";
 import { lookupDoc, recordDoc } from "./mapping";
 import { getAccessToken } from "./oauth";
+import { openInBrowser } from "./open";
 import { convertFile, resolveUpdateTarget, updateFile } from "./pipeline";
 import { NAME, VERSION } from "./version";
 
@@ -33,7 +34,7 @@ function fail(message: string): void {
 
 function finish(url: string, open: boolean): void {
   process.stdout.write(`${url}\n`);
-  if (open) Bun.spawn(["open", url]);
+  if (open) openInBrowser(url);
 }
 
 async function runConvert(command: Extract<Command, { kind: "convert" }>): Promise<void> {

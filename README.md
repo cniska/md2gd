@@ -17,7 +17,7 @@ md2gd removes that step. One command, the same clean styling every time, and the
 
 ## Requirements
 
-- macOS
+- macOS or Linux
 - [Bun](https://bun.sh) 1.3+
 - A Google account
 
@@ -99,7 +99,7 @@ Not yet supported (they degrade to readable text): embedded local images, footno
 
 ## Configuration and credentials
 
-md2gd stores everything under `~/.md2gd/` with owner-only permissions:
+md2gd stores everything in a user-scoped directory with owner-only permissions — `~/.md2gd/` on macOS, and `$XDG_CONFIG_HOME/md2gd` (default `~/.config/md2gd`) on Linux:
 
 - `client_secret.json` — your OAuth client (copied in by `init`)
 - `token.json` — the cached access/refresh token
@@ -109,11 +109,16 @@ Nothing here is ever transmitted anywhere except Google's own APIs.
 
 ## Reset
 
-To sign out, delete the cached token and re-run `init`:
+To sign out, delete the cached token and re-run `init`; delete the whole directory for a full reset including the stored client secret:
 
 ```
-rm ~/.md2gd/token.json      # re-authenticate on next `md2gd init`
-rm -rf ~/.md2gd             # full reset, including the stored client secret
+# macOS
+rm ~/.md2gd/token.json         # re-authenticate on next `md2gd init`
+rm -rf ~/.md2gd                # full reset
+
+# Linux
+rm ~/.config/md2gd/token.json  # re-authenticate on next `md2gd init`
+rm -rf ~/.config/md2gd         # full reset
 ```
 
 ## Contributing
