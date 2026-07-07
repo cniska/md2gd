@@ -154,10 +154,12 @@ describe("convert lists", () => {
     expect(bs[0]?.createParagraphBullets.range).toEqual({ startIndex: 1, endIndex: 6 });
   });
 
-  test("a task list uses the checkbox preset", () => {
+  test("a task list renders checked and unchecked glyphs, preserving state", () => {
     const reqs = convert(parseMarkdown("- [ ] todo\n- [x] done\n"));
-    expect(insertedText(reqs)).toBe("todo\ndone\n");
-    expect(bullets(reqs)[0]?.createParagraphBullets.bulletPreset).toBe("BULLET_CHECKBOX");
+    // Checked state survives as a leading glyph rather than being dropped.
+    expect(insertedText(reqs)).toBe("☐ todo\n☑ done\n");
+    // No checkbox bullet: the glyph is the marker (the API can't pre-check one).
+    expect(bullets(reqs)).toHaveLength(0);
   });
 
   test("bullet requests come last and in reverse document order", () => {

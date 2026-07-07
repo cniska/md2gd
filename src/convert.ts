@@ -186,7 +186,9 @@ function appendBlockquote(node: Blockquote, cursor: number, ctx: Context): numbe
 }
 
 function appendList(list: List, depth: number, cursor: number, ctx: Context): number {
-  const preset = bulletPreset(list);
+  // A task list renders its checked state as a leading glyph (the Docs API can't
+  // pre-check a native checklist bullet), so it uses no bullet preset of its own.
+  const task = isTaskList(list);
   const listStart = cursor;
   const requestStart = ctx.requests.length;
 
@@ -194,10 +196,10 @@ function appendList(list: List, depth: number, cursor: number, ctx: Context): nu
     cursor = appendListItem(item, depth, cursor, ctx);
   }
 
-  // Only the outermost list emits a bullet request; nested levels are covered by
-  // the same range and distinguished by their leading-tab depth.
   if (depth === 0 && cursor > listStart) {
-    ctx.bullets.push({ startIndex: listStart, endIndex: cursor, preset });
+    // Only the outermost list emits a bullet request; nested levels are covered by
+    // the same range and distinguished by their leading-tab depth.
+    if (!task) ctx.bullets.push({ startIndex: listStart, endIndex: cursor, preset: bulletPreset(list) });
     // Items are tightly spaced; restore normal space below the final one so the
     // list doesn't butt against the following block.
     ensureSpaceBelowOnLast(ctx.requests, requestStart, LIST_AFTER_SPACE);
@@ -206,16 +208,33 @@ function appendList(list: List, depth: number, cursor: number, ctx: Context): nu
 }
 
 function appendListItem(item: ListItem, depth: number, cursor: number, ctx: Context): number {
+  let first = true;
   for (const child of item.children) {
     if (child.type === "list") {
       cursor = appendList(child, depth + 1, cursor, ctx);
     } else if (child.type === "paragraph") {
-      cursor = appendParagraph(child.children, cursor, ctx, depth, listItemParagraphStyle());
+      // A checked/unchecked glyph leads the item's first line so completion state
+      // survives (a native checklist bullet can't be pre-checked via the API).
+      const inline =
+        first && typeof item.checked === "boolean" ? [taskGlyph(item.checked), ...child.children] : child.children;
+      cursor = appendParagraph(inline, cursor, ctx, depth, listItemParagraphStyle());
+      first = false;
     } else {
       cursor = appendRaw(mdastToString(child), cursor, ctx, depth, listItemParagraphStyle());
+      first = false;
     }
   }
   return cursor;
+}
+
+/** A GFM task list — at least one item carries a boolean checked state. */
+function isTaskList(list: List): boolean {
+  return list.children.some((item) => typeof item.checked === "boolean");
+}
+
+/** Leading glyph for a task item, preserving its checked/unchecked state as text. */
+function taskGlyph(checked: boolean): PhrasingContent {
+  return { type: "text", value: checked ? "☑ " : "☐ " };
 }
 
 // Known limitation: one preset applies to the whole (possibly nested) list, so a
@@ -224,9 +243,7 @@ function appendListItem(item: ListItem, depth: number, cursor: number, ctx: Cont
 // separate bullet requests per contiguous same-type run. The target documents
 // use flat single-type lists, so this is documented rather than implemented.
 function bulletPreset(list: List): BulletPreset {
-  if (list.ordered) return "NUMBERED_DECIMAL_ALPHA_ROMAN";
-  if (list.children.some((item) => typeof item.checked === "boolean")) return "BULLET_CHECKBOX";
-  return "BULLET_DISC_CIRCLE_SQUARE";
+  return list.ordered ? "NUMBERED_DECIMAL_ALPHA_ROMAN" : "BULLET_DISC_CIRCLE_SQUARE";
 }
 
 function appendParagraph(
