@@ -55,7 +55,7 @@ Supporting areas:
 - [x] Rollback plan documented
 - [ ] Billing webhook secret rotated
 - [ ] Session cookie flags shipped
-- Runbook linked in the on-call channel
+- [ ] Runbook linked in the on-call channel
 
 ## Configuration
 
