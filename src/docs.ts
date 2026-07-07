@@ -49,6 +49,7 @@ export interface ParagraphStyle {
   spaceAbove?: Dimension;
   spaceBelow?: Dimension;
   indentStart?: Dimension;
+  indentFirstLine?: Dimension;
   shading?: Shading;
   borderLeft?: ParagraphBorder;
   borderBottom?: ParagraphBorder;

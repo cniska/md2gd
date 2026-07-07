@@ -201,7 +201,11 @@ describe("convert other block types", () => {
     const style = paragraphStyles(reqs).find((s) => s.updateParagraphStyle.paragraphStyle.borderLeft);
     expect(style).toBeDefined();
     if (!style) throw new Error("no blockquote style");
-    expect(style.updateParagraphStyle.paragraphStyle.indentStart?.magnitude).toBeGreaterThan(0);
+    const ps = style.updateParagraphStyle.paragraphStyle;
+    expect(ps.indentStart?.magnitude).toBeGreaterThan(0);
+    // First-line indent must match the start indent, or a multi-line quote hangs
+    // its continuation lines to the right (Docs applies indentStart after a break).
+    expect(ps.indentFirstLine?.magnitude).toBe(ps.indentStart?.magnitude);
     expect(insertedText(reqs)).toBe("quoted line\n");
   });
 

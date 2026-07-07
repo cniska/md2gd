@@ -167,6 +167,10 @@ export const codeBlockTextStyle: TextStyle = { weightedFontFamily: { fontFamily:
 /** Blockquote: indented with an accent bar on the left. */
 export const blockquoteParagraphStyle: ParagraphStyleSpec = spec({
   indentStart: pt(24),
+  // Match the first-line indent to the start indent. Docs applies indentStart to
+  // every line after a break but indentFirstLine (default 0) to the first, so a
+  // multi-line quote would otherwise hang its continuation lines to the right.
+  indentFirstLine: pt(24),
   borderLeft: { color: BORDER_GREY, width: pt(3), padding: pt(8), dashStyle: "SOLID" },
   spaceAbove: pt(6),
   spaceBelow: pt(10),
