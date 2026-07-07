@@ -9,6 +9,12 @@ md2gd ~/notes/report.md
 
 One command turns a Markdown file into a cleanly styled Google Doc in your Drive — proper heading hierarchy, readable spacing, styled tables with padded cells and a shaded header row, monospace code, and working links. The document never leaves your own Google account.
 
+## Why
+
+I write long-form reports in Markdown, then need them as polished, shareable Google Docs. That last step is the slow one. Pasting or exporting through HTML mangles exactly what matters in a report: tables lose their structure, spacing collapses, code and headings need reflowing. You end up fixing the document by hand instead of writing it.
+
+md2gd removes that step. One command, the same clean styling every time, and the file never leaves your own Drive.
+
 ## Requirements
 
 - macOS
