@@ -258,6 +258,13 @@ describe("convert typography and styling coverage", () => {
     expect(style?.keepWithNext).toBeUndefined();
   });
 
+  test("a fully bold hyperlink is not treated as a caption", () => {
+    const reqs = convert(parseMarkdown("**[the link](https://example.com)**\n"));
+    const style = paragraphStyles(reqs)[0]?.updateParagraphStyle.paragraphStyle;
+    expect(style?.keepWithNext).toBeUndefined();
+    expect(style?.namedStyleType).toBe("NORMAL_TEXT");
+  });
+
   test("a run following a table gets space above its first block", () => {
     const { requests } = convertNodes(parseMarkdown("Outro.\n").children, 1, { afterTable: true });
     const first = requests.find((r) => "updateParagraphStyle" in r);

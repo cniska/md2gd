@@ -145,14 +145,21 @@ function ensureSpaceBelowOnLast(requests: DocRequest[], fromIndex: number, floor
   }
 }
 
+// Inline content a caption's bold may contain. A strong wrapping a link, image,
+// or code span is a bold link/code in prose, not a sub-label — so it's excluded.
+const PLAIN_BOLD_CONTENT = new Set(["text", "emphasis", "delete", "break"]);
+
 /**
- * A paragraph is a caption when every child is bold (`**…**`), ignoring
- * whitespace-only text. Detected here rather than by lookahead because the
- * caption ends a linear segment and the table it introduces is the next segment.
+ * A paragraph is a caption when every child is plain bold text (`**…**`), ignoring
+ * whitespace-only text. Detected here rather than by lookahead because the caption
+ * ends a linear segment and the table it introduces is the next segment.
  */
 function isBoldOnly(children: PhrasingContent[]): boolean {
   const meaningful = children.filter((child) => child.type !== "text" || child.value.trim().length > 0);
-  return meaningful.length > 0 && meaningful.every((child) => child.type === "strong");
+  return (
+    meaningful.length > 0 &&
+    meaningful.every((child) => child.type === "strong" && child.children.every((c) => PLAIN_BOLD_CONTENT.has(c.type)))
+  );
 }
 
 function appendCode(node: Code, cursor: number, ctx: Context): number {
