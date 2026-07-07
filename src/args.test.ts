@@ -20,11 +20,46 @@ describe("parseArgs", () => {
   });
 
   test("a file path with options parses to a convert command", () => {
-    expect(parseArgs(["doc.md"])).toEqual({ kind: "convert", file: "doc.md", title: undefined, open: false });
+    expect(parseArgs(["doc.md"])).toEqual({
+      kind: "convert",
+      file: "doc.md",
+      title: undefined,
+      open: false,
+      update: false,
+    });
     expect(parseArgs(["doc.md", "--open", "--title", "Report"])).toEqual({
       kind: "convert",
       file: "doc.md",
       title: "Report",
+      open: true,
+      update: false,
+    });
+  });
+
+  test("--update with no argument flags an update against the file's remembered doc", () => {
+    expect(parseArgs(["doc.md", "--update"])).toEqual({
+      kind: "convert",
+      file: "doc.md",
+      title: undefined,
+      open: false,
+      update: true,
+      updateTarget: undefined,
+    });
+  });
+
+  test("--update with an argument captures the explicit target", () => {
+    const cmd = parseArgs(["doc.md", "--update", "https://docs.google.com/document/d/abc/edit"]);
+    expect(cmd).toMatchObject({
+      kind: "convert",
+      update: true,
+      updateTarget: "https://docs.google.com/document/d/abc/edit",
+    });
+  });
+
+  test("--update before another flag stays a no-arg update", () => {
+    expect(parseArgs(["doc.md", "--update", "--open"])).toMatchObject({
+      update: true,
+      updateTarget: undefined,
       open: true,
     });
   });
