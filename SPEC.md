@@ -58,7 +58,7 @@ The tool must faithfully render the following, mapping each to the closest nativ
 - **FR-16** — Blockquotes, visually distinct from body text.
 - **FR-17** — Horizontal rules (`---`) are **ignored** (produce no output). A bordered rule renders poorly in Google Docs, and heading spacing already separates sections, so thematic breaks are dropped rather than drawn.
 - **FR-18** — Images. **URL-referenced images** (fetchable by Google's servers) are embedded inline at a reasonable width in v1. **Local-path images** are lower priority — the Docs API cannot embed a local file directly (it needs a Google-reachable URL), so v1 may warn-and-skip them per FR-21 rather than implement upload-and-temporary-link plumbing. (The reference document contains no images, so this is low-value for v1.) In all cases, an image that cannot be fetched/read must warn and continue, never abort the conversion.
-- **FR-19** — Links must remain clickable in the output document.
+- **FR-19** — Links whose target a reader of the document can follow must remain clickable in the output. Links to targets that do not resolve outside the source tree — relative paths, bare filenames, in-page anchors, `file:` URLs — must render as plain text rather than dead links (see §9 auto-linking policy).
 - **FR-20** — Footnotes, rendered as Google Docs footnotes or an endnotes section if native footnotes are impractical.
 - **FR-21** — Any Markdown construct not explicitly listed must degrade gracefully — rendered as readable text rather than raw markup or a crash.
 
@@ -262,6 +262,6 @@ These are explicitly **not** constrained by this spec; choose what best satisfie
 ### Policies referenced above (chosen, not open)
 
 - **Soft line breaks (FR-32):** render a single newline within a paragraph as a line break (i.e. treat source line breaks as intended). The reference document is not hard-wrapped at a column width, so this reproduces author intent without side effects. If a future document turns out to be hard-wrapped, revisit.
-- **Auto-linking (FR-37):** do **not** invent hyperlinks from bare domains or fabricate link targets. Only explicit Markdown links (`[text](url)`) and explicit bare URLs with a scheme (`https://…`) become clickable links; a scheme-less domain like `partybook-one.vercel.app` renders as plain text, unchanged.
+- **Auto-linking (FR-37):** do **not** invent hyperlinks from bare domains or fabricate link targets. A link becomes clickable only when its target resolves outside the source document — an absolute URL with a followable scheme (`http`, `https`, `mailto`, `tel`). Explicit Markdown links to a local target (a relative path, bare filename, or in-page anchor like `#section`) and unsafe schemes (`javascript:`, `data:`, `file:`) render as plain styled text: they would be dead links in a Google Doc (FR-19). A scheme-less bare domain like `partybook-one.vercel.app` likewise stays plain text, unchanged.
 
 The implementation approach, the UTF-16 offset hazard, and the two-phase table flow are non-normative and documented in `docs/architecture.md`.
