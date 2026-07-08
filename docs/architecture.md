@@ -45,7 +45,9 @@ After the fills, the table's size has changed, so the executor re-reads the docu
 
 ### Pre-table spacer
 
-The API injects an empty paragraph immediately before every inserted table. Left alone it renders inconsistently and breaks caption grouping. The executor pins that paragraph to a thin, deterministic spacer. This is what makes create mode and update mode render tables identically, and lets a bold caption sit tight against the table it introduces (SPEC FR-34, FR-35).
+The API injects an empty paragraph immediately before every inserted table. Left alone it renders inconsistently and breaks caption grouping. The executor pins that paragraph to a thin ~6pt spacer, styled only on its single newline index so no real caption or heading text is shrunk. This keeps create and update rendering identical and lets a bold caption sit close to the table it introduces (SPEC FR-34, FR-35).
+
+**Why not just delete it?** Removing the paragraph seems cleaner, but the Docs API rejects it: `deleteContentRange` over the newline immediately before a table returns `400 Invalid deletion range. Cannot delete the requested range.` (The Docs editor lets you backspace it; the API does not.) The spacer is a required workaround, not a stylistic choice — do not reintroduce a delete here; tuning its size is the only safe lever.
 
 ### Clear-and-rewrite update
 
