@@ -113,7 +113,12 @@ function distributeColumnWidths(cells: CellPlan[][], columns: number): Dimension
   const floorOf = (i: number): number => floors[i] ?? MIN_COLUMN_WIDTH_PT;
   let remaining = TABLE_CONTENT_WIDTH_PT;
 
-  // Iteratively pin any column whose fair share is below its own natural floor.
+  // Pin any column whose weighted share falls below its natural floor, one per
+  // pass. Pinning consumes width, so `remaining` and the flexible weight sum must
+  // be recomputed after each pin: evaluating several pins against one stale weight
+  // sum over-pins and leaves the table narrower than the page. Whatever survives
+  // as flexible then absorbs all the remaining width, so the columns always fill
+  // the full content width.
   for (let changed = true; changed; ) {
     changed = false;
     const weightSum = [...flexible].reduce((sum, i) => sum + weightOf(i), 0);
@@ -123,6 +128,7 @@ function distributeColumnWidths(cells: CellPlan[][], columns: number): Dimension
         remaining -= floorOf(i);
         flexible.delete(i);
         changed = true;
+        break;
       }
     }
   }

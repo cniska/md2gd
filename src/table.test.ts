@@ -20,13 +20,28 @@ describe("buildTablePlan", () => {
     expect(plan.cells[1]?.[1]?.text).toBe("Missing");
   });
 
-  test("column widths are fixed points that sum within the page content width", () => {
+  test("column widths are fixed points that fill the full page content width", () => {
     const plan = firstTable(SIMPLE);
     expect(plan.columnWidths).toHaveLength(2);
     const total = plan.columnWidths.reduce((s, d) => s + d.magnitude, 0);
-    expect(total).toBeLessThanOrEqual(468);
-    expect(total).toBeGreaterThan(400);
+    expect(Math.abs(total - 468)).toBeLessThanOrEqual(1);
     for (const w of plan.columnWidths) expect(w.unit).toBe("PT");
+  });
+
+  test("two medium columns beside a long one still fill the full width", () => {
+    // Regression: the pinning pass used to fix col widths against a stale weight
+    // sum, over-pinning all three columns to their floors and leaving the table
+    // short of the right margin (summed ~408, not 468).
+    const md = [
+      "| Column | Type | Notes |",
+      "|---|---|---|",
+      "| business_id | uuid | references business(id) on delete cascade |",
+      "| profile_id | uuid | references profiles(id) on delete cascade |",
+      "| role | enum | owner, staff |",
+      "",
+    ].join("\n");
+    const total = firstTable(md).columnWidths.reduce((s, d) => s + d.magnitude, 0);
+    expect(Math.abs(total - 468)).toBeLessThanOrEqual(1);
   });
 
   test("a short column beside a very long one is floored, not collapsed", () => {
