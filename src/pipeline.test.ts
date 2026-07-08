@@ -39,6 +39,11 @@ class StubClient implements DocsClient {
   renameDocument(_id: string, _name: string): Promise<void> {
     return Promise.resolve();
   }
+  movedTo?: string;
+  moveDocument(_id: string, folderId: string): Promise<void> {
+    this.movedTo = folderId;
+    return Promise.resolve();
+  }
 }
 
 describe("convertFile", () => {
@@ -156,6 +161,22 @@ describe("updateFile", () => {
     // update resolves to that same doc without re-passing the URL.
     await updateFile(md, {}, new StubClient(), "adopted-doc", cfg);
     expect(await resolveUpdateTarget(md, undefined, cfg)).toBe("adopted-doc");
+  });
+
+  test("moves the doc when --folder is given on update (relocate)", async () => {
+    const md = `${tmpdir()}/relocate-${Date.now()}.md`;
+    await Bun.write(md, "# R\n\nBody.\n");
+    const client = new StubClient();
+    await updateFile(md, { folder: "https://drive.google.com/drive/folders/DEST9" }, client, "doc-x");
+    expect(client.movedTo).toBe("DEST9");
+  });
+
+  test("does not move when --folder is absent on update", async () => {
+    const md = `${tmpdir()}/norelocate-${Date.now()}.md`;
+    await Bun.write(md, "# R\n\nBody.\n");
+    const client = new StubClient();
+    await updateFile(md, {}, client, "doc-x");
+    expect(client.movedTo).toBeUndefined();
   });
 
   test("does not record when the update fails at the read", async () => {

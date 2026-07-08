@@ -44,10 +44,10 @@ async function runConvert(command: Extract<Command, { kind: "convert" }>): Promi
   const client = new GoogleDocsClient({ getToken: () => getAccessToken(secret, Date.now()) });
 
   if (update) {
-    // Stable-URL mode: re-render in place, so the URL and Drive location persist.
-    // The doc keeps its existing location, so --folder does not apply here.
+    // Stable-URL mode: re-render in place, so the URL persists. A --folder here
+    // moves the doc into that folder (relocate) rather than creating a new one.
     const documentId = await resolveUpdateTarget(file, updateTarget);
-    await updateFile(file, { title }, client, documentId);
+    await updateFile(file, { title, folder }, client, documentId);
     finish(documentUrl(documentId), open);
     return;
   }

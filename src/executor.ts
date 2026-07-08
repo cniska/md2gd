@@ -21,6 +21,8 @@ export interface DocsClient {
   getDocument(documentId: string): Promise<DocumentResource>;
   /** Rename the underlying Drive file (used to keep an updated doc's title in sync). */
   renameDocument(documentId: string, name: string): Promise<void>;
+  /** Move the underlying Drive file into the given folder (used by `--update --folder`). */
+  moveDocument(documentId: string, folderId: string): Promise<void>;
 }
 
 /**
@@ -52,6 +54,7 @@ export async function updateDocument(
   documentId: string,
   title: string,
   segments: Segment[],
+  folderId?: string,
 ): Promise<void> {
   // Read before any destructive call, so a missing or inaccessible target leaves
   // it untouched (FR-39). A 403/404 means the id is wrong, the doc was trashed,
@@ -69,6 +72,8 @@ export async function updateDocument(
     throw error;
   }
 
+  // Relocate before clearing, so a bad --folder fails before the body is touched.
+  if (folderId) await client.moveDocument(documentId, folderId);
   const clear = clearBodyRequests(doc);
   if (clear.length > 0) await client.batchUpdate(documentId, clear);
   await fillSegments(client, documentId, segments);

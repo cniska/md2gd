@@ -33,6 +33,12 @@ class MockClient {
     this.renames.push({ id, name });
     return Promise.resolve();
   }
+  moves: { id: string; folderId: string }[] = [];
+  moveDocument(id: string, folderId: string): Promise<void> {
+    this.calls.push("moveDocument");
+    this.moves.push({ id, folderId });
+    return Promise.resolve();
+  }
 }
 
 describe("executeDocument", () => {
@@ -177,5 +183,20 @@ describe("updateDocument", () => {
     const client = new MockClient([populated]);
     await updateDocument(client, "doc-x", "Old title", planDocument(parseMarkdown("Body.\n")));
     expect(client.renames).toHaveLength(0);
+  });
+
+  test("moves the doc into the given folder, before clearing (FR-27b)", async () => {
+    const client = new MockClient([populated]);
+    await updateDocument(client, "doc-x", "Old title", planDocument(parseMarkdown("Body.\n")), "folder-9");
+    expect(client.moves).toEqual([{ id: "doc-x", folderId: "folder-9" }]);
+    // Relocate happens after the read but before any destructive batch.
+    expect(client.calls.indexOf("moveDocument")).toBeLessThan(client.calls.indexOf("batchUpdate"));
+    expect(client.calls.indexOf("getDocument")).toBeLessThan(client.calls.indexOf("moveDocument"));
+  });
+
+  test("does not move when no folder is given", async () => {
+    const client = new MockClient([populated]);
+    await updateDocument(client, "doc-x", "Old title", planDocument(parseMarkdown("Body.\n")));
+    expect(client.moves).toHaveLength(0);
   });
 });

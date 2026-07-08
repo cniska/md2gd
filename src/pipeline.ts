@@ -76,7 +76,8 @@ export async function updateFile(
 ): Promise<void> {
   const tree = await loadTree(filePath);
   const title = options.title ?? deriveTitle(tree, filePath);
-  await updateDocument(client, documentId, title, planDocument(tree));
+  const folderId = options.folder ? parseFolderId(options.folder) : undefined;
+  await updateDocument(client, documentId, title, planDocument(tree), folderId);
   // Remember this file → doc binding, so a later no-argument `--update` finds it.
   // This is what adopts a doc first targeted explicitly (`--update <url|id>`) —
   // including one md2gd did not create — into the seamless regenerate loop (FR-42).

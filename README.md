@@ -90,7 +90,7 @@ md2gd <file.md> --update [<url|id>] [--title <title>] [--open]
 ```
 
 - `--title <title>` — override the document title (defaults to the file's top `# H1`, else its title-cased filename, e.g. `service-readiness-review.md` → "Service Readiness Review").
-- `--folder <url|id>` — create the doc in this Drive folder (a folder URL or bare id) instead of the default `md2gd` folder. Only applies when creating.
+- `--folder <url|id>` — the destination Drive folder (a folder URL or bare id). On a new conversion it places the doc there instead of the default `md2gd` folder; with `--update` it moves the existing doc into that folder (same URL).
 - `--update [<url|id>]` — re-render into an existing doc instead of creating a new one (see below).
 - `--open` — open the doc in your browser afterwards.
 - `md2gd --help` / `md2gd --version`.

@@ -74,6 +74,31 @@ describe("GoogleDocsClient.createDocument", () => {
   });
 });
 
+describe("GoogleDocsClient.moveDocument", () => {
+  test("reads current parents, then reparents via addParents/removeParents", async () => {
+    const { calls, fetchFn } = recorder([{ parents: ["oldFolder"] }, {}]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await client.moveDocument("doc9", "newFolder");
+    expect(calls[0]?.method).toBe("GET"); // fetch current parents
+    expect(calls[1]?.method).toBe("PATCH");
+    expect(calls[1]?.url).toContain("addParents=newFolder");
+    expect(calls[1]?.url).toContain("removeParents=oldFolder");
+  });
+
+  test("wraps a move into an inaccessible folder with an actionable message", async () => {
+    let call = 0;
+    const fetchFn: FetchFn = () => {
+      call++;
+      // First call (GET parents) succeeds; the PATCH move fails.
+      const status = call === 1 ? 200 : 404;
+      const body = call === 1 ? { parents: ["old"] } : { error: { message: "File not found." } };
+      return Promise.resolve(new Response(JSON.stringify(body), { status }));
+    };
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await expect(client.moveDocument("doc9", "bad")).rejects.toThrow(/cannot move into folder bad/);
+  });
+});
+
 describe("GoogleDocsClient.batchUpdate", () => {
   test("posts requests to the batchUpdate endpoint with a bearer token", async () => {
     const { calls, fetchFn } = recorder([{}]);

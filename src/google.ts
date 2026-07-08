@@ -78,6 +78,24 @@ export class GoogleDocsClient implements DocsClient {
     await this.json("PATCH", `${DRIVE_API}/${documentId}`, { name });
   }
 
+  async moveDocument(documentId: string, folderId: string): Promise<void> {
+    // A Drive file has a single parent, so a move adds the new folder and removes
+    // the current one(s). Fetch the current parents first to know what to remove.
+    const meta = (await this.json("GET", `${DRIVE_API}/${documentId}?fields=parents`)) as { parents?: string[] };
+    const remove = (meta.parents ?? []).join(",");
+    const query = `addParents=${encodeURIComponent(folderId)}${remove ? `&removeParents=${encodeURIComponent(remove)}` : ""}`;
+    try {
+      await this.json("PATCH", `${DRIVE_API}/${documentId}?${query}`, {});
+    } catch (error) {
+      if (error instanceof Error && /\((?:403|404)\)/.test(error.message)) {
+        throw new Error(
+          `md2gd: cannot move into folder ${folderId} — check the folder URL and that you can write to it`,
+        );
+      }
+      throw error;
+    }
+  }
+
   private async ensureFolder(): Promise<string> {
     const q = `name='${this.folderName}' and mimeType='${FOLDER_MIME}' and trashed=false`;
     const found = (await this.json("GET", `${DRIVE_API}?q=${encodeURIComponent(q)}&fields=files(id)`)) as {
