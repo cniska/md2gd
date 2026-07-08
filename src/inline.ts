@@ -53,9 +53,9 @@ export function inlineRuns(nodes: PhrasingContent[]): InlineContent {
           walk(node.children, { ...active, strikethrough: true });
           break;
         case "link":
-          // Only link out to safe schemes; a javascript:/data: URL renders as
-          // plain styled text with no link attached.
-          walk(node.children, isSafeUrl(node.url) ? { ...active, ...linkTextStyle(node.url) } : active);
+          // Link out only to targets a reader of the Doc can follow; a local
+          // path, anchor, or unsafe scheme renders as plain styled text.
+          walk(node.children, isLinkableUrl(node.url) ? { ...active, ...linkTextStyle(node.url) } : active);
           break;
         case "break":
           emit(LINE_BREAK, active);
@@ -78,14 +78,18 @@ export function inlineRuns(nodes: PhrasingContent[]): InlineContent {
   return { text, runs };
 }
 
-/**
- * A link target is safe if it has no scheme (relative) or a benign one. Schemes
- * like `javascript:` and `data:` are rejected so they never become live links.
- */
-const SAFE_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
+/** Schemes that resolve to something a reader of the Doc can actually follow. */
+const LINKABLE_SCHEMES = new Set(["http", "https", "mailto", "tel"]);
 
-export function isSafeUrl(url: string): boolean {
-  const match = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url);
-  if (!match?.[1]) return true;
-  return SAFE_SCHEMES.has(match[1].toLowerCase());
+/**
+ * A link target becomes a clickable link only if it resolves outside the
+ * document. That means an absolute URL with a followable scheme (http, https,
+ * mailto, tel). Relative paths, bare filenames, and in-page anchors (`#section`)
+ * point at things that don't exist in a Google Doc; unsafe schemes
+ * (`javascript:`, `data:`) and local `file:` URLs must never become live links.
+ * All of these render as plain styled text instead.
+ */
+export function isLinkableUrl(url: string): boolean {
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(url)?.[1]?.toLowerCase();
+  return scheme !== undefined && LINKABLE_SCHEMES.has(scheme);
 }

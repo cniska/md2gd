@@ -235,6 +235,35 @@ describe("convert link safety and bare domains", () => {
     const reqs = convert(parseMarkdown("see partybook-one.vercel.app today\n"));
     expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
   });
+
+  test("mailto and tel links stay clickable", () => {
+    for (const url of ["mailto:team@example.com", "tel:+123456789"]) {
+      const reqs = convert(parseMarkdown(`[reach us](${url})\n`));
+      const link = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.link);
+      expect(link?.updateTextStyle.textStyle.link?.url).toBe(url);
+    }
+  });
+
+  test("a relative-path link renders as plain text (dead in a Doc)", () => {
+    const reqs = convert(parseMarkdown("see the [report](./report.md) here\n"));
+    expect(insertedText(reqs)).toBe("see the report here\n");
+    expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
+  });
+
+  test("a bare-filename link renders as plain text", () => {
+    const reqs = convert(parseMarkdown("open [notes](notes.md)\n"));
+    expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
+  });
+
+  test("an in-page anchor link renders as plain text", () => {
+    const reqs = convert(parseMarkdown("jump to [summary](#summary)\n"));
+    expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
+  });
+
+  test("a file: link renders as plain text", () => {
+    const reqs = convert(parseMarkdown("[local](file:///Users/me/doc.md)\n"));
+    expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.link)).toBe(false);
+  });
 });
 
 describe("convert typography and styling coverage", () => {
