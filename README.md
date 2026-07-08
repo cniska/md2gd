@@ -68,7 +68,7 @@ Creating a Doc in your Drive is a per-user write, so Google requires an OAuth lo
 3. Configure the **OAuth consent screen**: user type **External**, fill in the required fields, and **publish it to Production**. Leaving it in "Testing" makes Google expire your login after 7 days.
 4. Under **Credentials → Create credentials → OAuth client ID**, choose application type **Desktop app**. Download the resulting `client_secret.json`.
 
-md2gd requests only the `drive.file` and `documents` scopes — it can see and touch only the files it creates, never the rest of your Drive.
+md2gd uses the `drive` scope so it can place docs in folders you choose — including shared folders you didn't create (`--folder`) — and update docs it didn't originally create. Because that's a sensitive scope, the consent screen shows an "unverified app" warning; click **Advanced → Go to md2gd (unsafe)** to proceed. That's expected for a personal tool running against your own account with code you can read.
 
 ## Authenticate
 
@@ -80,19 +80,26 @@ md2gd init --client ~/Downloads/client_secret.json
 
 Your browser opens for consent. Approve it, and the token is cached locally. After this, conversion is pure command-line — the access token refreshes silently.
 
+Upgrading from an earlier version? The OAuth scope changed, so re-run `md2gd init` to re-consent (delete `token.json` first if it doesn't re-prompt — see [Reset](#reset)).
+
 ## Usage
 
 ```
-md2gd <file.md> [--title <title>] [--open]
+md2gd <file.md> [--title <title>] [--folder <url|id>] [--open]
 md2gd <file.md> --update [<url|id>] [--title <title>] [--open]
 ```
 
-- `--title <title>` — override the document title (defaults to the file's top `# H1`, else its filename).
+- `--title <title>` — override the document title (defaults to the file's top `# H1`, else its title-cased filename, e.g. `service-readiness-review.md` → "Service Readiness Review").
+- `--folder <url|id>` — create the doc in this Drive folder (a folder URL or bare id) instead of the default `md2gd` folder. Only applies when creating.
 - `--update [<url|id>]` — re-render into an existing doc instead of creating a new one (see below).
 - `--open` — open the doc in your browser afterwards.
 - `md2gd --help` / `md2gd --version`.
 
-Generated docs are placed in an `md2gd` folder in your Drive. By default each run creates a new document and prints its URL.
+By default each run creates a new document in an `md2gd` folder in your Drive and prints its URL. Pass `--folder` to place it elsewhere, including a shared folder:
+
+```
+md2gd docs/schema.md --folder https://drive.google.com/drive/folders/1QzE1-xPWzbF…
+```
 
 ## Updating a doc in place (stable URL)
 
@@ -113,7 +120,7 @@ A plain run (no `--update`) never overwrites: if a doc already exists for the fi
 
 **Limits, by design:**
 
-- md2gd can only update docs **it created** (it uses the narrow `drive.file` scope). Pointing `--update` at a doc you made by hand in the Docs UI fails with a clear message rather than editing it.
+- `--update` works on any doc you can edit — one md2gd made, or one you created by hand or that was shared into a folder. A plain run still never overwrites (it always creates and prints a reminder); overwriting is only ever explicit via `--update`. A target you can't access fails with a clear message, changing nothing.
 - Updating **clears and rewrites** the body. Google Docs **comments anchored to the old content will orphan**, and the rewrite is **not atomic** — an interrupted run can leave the doc partially rewritten. For the regenerate-a-report loop this is the right trade; for a heavily commented doc, prefer a fresh conversion.
 
 ## What it renders

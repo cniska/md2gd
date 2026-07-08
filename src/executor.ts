@@ -16,7 +16,7 @@ import type { TablePlan } from "./table";
  * tested against a mock and never touches the network in unit tests.
  */
 export interface DocsClient {
-  createDocument(title: string): Promise<{ documentId: string }>;
+  createDocument(title: string, folderId?: string): Promise<{ documentId: string }>;
   batchUpdate(documentId: string, requests: DocRequest[]): Promise<void>;
   getDocument(documentId: string): Promise<DocumentResource>;
   /** Rename the underlying Drive file (used to keep an updated doc's title in sync). */
@@ -29,8 +29,13 @@ export interface DocsClient {
  * real cell indices, then filled — so no cell offsets are ever guessed.
  * Returns the new document id.
  */
-export async function executeDocument(client: DocsClient, title: string, segments: Segment[]): Promise<string> {
-  const { documentId } = await client.createDocument(title);
+export async function executeDocument(
+  client: DocsClient,
+  title: string,
+  segments: Segment[],
+  folderId?: string,
+): Promise<string> {
+  const { documentId } = await client.createDocument(title, folderId);
   await fillSegments(client, documentId, segments);
   return documentId;
 }
@@ -48,16 +53,17 @@ export async function updateDocument(
   title: string,
   segments: Segment[],
 ): Promise<void> {
-  // Read before any destructive call. A 404 here means the target isn't a doc
-  // md2gd created (drive.file hides it) or no longer exists — translate it to an
-  // actionable message. Only the read is wrapped; later failures surface as-is.
+  // Read before any destructive call, so a missing or inaccessible target leaves
+  // it untouched (FR-39). A 403/404 means the id is wrong, the doc was trashed,
+  // or the user lacks access — translate it to an actionable message. Only the
+  // read is wrapped; later failures surface as-is.
   let doc: DocumentResource;
   try {
     doc = await client.getDocument(documentId);
   } catch (error) {
-    if (error instanceof Error && /\(404\)/.test(error.message)) {
+    if (error instanceof Error && /\((?:403|404)\)/.test(error.message)) {
       throw new Error(
-        `md2gd: cannot update document ${documentId} — md2gd can only update documents it created, and the document must still exist`,
+        `md2gd: cannot open document ${documentId} for update — check the URL/id and that you have edit access`,
       );
     }
     throw error;

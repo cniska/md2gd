@@ -55,6 +55,23 @@ describe("GoogleDocsClient.createDocument", () => {
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
     expect(calls.at(-1)?.body).toMatchObject({ parents: ["existing"] });
   });
+
+  test("uses a given folder id directly, skipping the default-folder lookup (FR-27b)", async () => {
+    const { calls, fetchFn } = recorder([{ id: "docInFolder" }]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    const result = await client.createDocument("T", "chosen-folder");
+    expect(result.documentId).toBe("docInFolder");
+    // Only the doc create — no folder search or folder create.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "POST", body: { parents: ["chosen-folder"] } });
+  });
+
+  test("wraps a failure creating in a given folder with an actionable message (FR-25)", async () => {
+    const fetchFn: FetchFn = () =>
+      Promise.resolve(new Response(JSON.stringify({ error: { message: "File not found: x." } }), { status: 404 }));
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await expect(client.createDocument("T", "bad-folder")).rejects.toThrow(/cannot create in folder bad-folder/);
+  });
 });
 
 describe("GoogleDocsClient.batchUpdate", () => {

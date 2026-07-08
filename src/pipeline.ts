@@ -7,7 +7,7 @@ import { lookupDoc } from "./mapping";
 import { parseMarkdown } from "./parse";
 import { planDocument } from "./plan";
 
-/** Title from the first H1, else the file's base name without extension. */
+/** Title from the first H1, else the file's base name title-cased. */
 export function deriveTitle(tree: Root, filePath: string): string {
   const h1 = tree.children.find((node) => node.type === "heading" && node.depth === 1);
   if (h1) {
@@ -16,11 +16,28 @@ export function deriveTitle(tree: Root, filePath: string): string {
   }
   const base = filePath.slice(filePath.lastIndexOf("/") + 1);
   const dot = base.lastIndexOf(".");
-  return dot > 0 ? base.slice(0, dot) : base;
+  const stem = dot > 0 ? base.slice(0, dot) : base;
+  return titleCaseFilename(stem);
+}
+
+/**
+ * Turn a file stem into a document title: split on `-`, `_`, and spaces, then
+ * capitalise each word's first letter (leaving the rest as-is, so acronyms like
+ * `API` survive). `service-readiness-review` → "Service Readiness Review".
+ */
+function titleCaseFilename(stem: string): string {
+  const titled = stem
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+  return titled || stem;
 }
 
 export interface ConvertOptions {
   title?: string;
+  /** Destination Drive folder for a new doc, as a folder URL or bare id. */
+  folder?: string;
 }
 
 /** Read and validate a Markdown file, returning its parsed AST. */
@@ -41,13 +58,14 @@ async function loadTree(filePath: string): Promise<Root> {
 export async function convertFile(filePath: string, options: ConvertOptions, client: DocsClient): Promise<string> {
   const tree = await loadTree(filePath);
   const title = options.title ?? deriveTitle(tree, filePath);
-  return executeDocument(client, title, planDocument(tree));
+  const folderId = options.folder ? parseFolderId(options.folder) : undefined;
+  return executeDocument(client, title, planDocument(tree), folderId);
 }
 
 /**
- * Re-render a Markdown file into an **existing** document (stable-URL mode). The
- * `drive.file` 404 for a doc md2gd didn't create is translated by `updateDocument`
- * at the read-before-destroy step.
+ * Re-render a Markdown file into an **existing** document (stable-URL mode). An
+ * inaccessible or missing target is translated by `updateDocument` at the
+ * read-before-destroy step into an actionable message.
  */
 export async function updateFile(
   filePath: string,
@@ -63,6 +81,12 @@ export async function updateFile(
 /** Extract a Google Docs document id from a full edit URL or accept a bare id. */
 export function parseDocId(input: string): string {
   const match = input.match(/\/d\/([\w-]+)/);
+  return match?.[1] ?? input.trim();
+}
+
+/** Extract a Drive folder id from a folder URL (`/folders/<id>`) or accept a bare id. */
+export function parseFolderId(input: string): string {
+  const match = input.match(/\/folders\/([\w-]+)/);
   return match?.[1] ?? input.trim();
 }
 

@@ -35,7 +35,7 @@ A single technical user (the author) running the tool from a macOS or Linux term
 - **FR-1** — Accept a path to a single Markdown file as the primary argument.
 - **FR-2** — Convert the file's content into a Google Docs document created in the user's Google Drive.
 - **FR-3** — On success, print the created document's shareable URL to stdout.
-- **FR-4** — The document title must default to the Markdown's top-level H1 if present, otherwise the input filename (without extension). The user must be able to override the title via an option.
+- **FR-4** — The document title must default to the Markdown's top-level H1 if present. Otherwise it defaults to a human-readable form of the input filename: the extension dropped and the stem word-separated (on `-`, `_`, spaces) with each word's first letter capitalised (e.g. `service-readiness-review.md` → "Service Readiness Review"). The user must be able to override the title via an option.
 - **FR-5** — Each run creates a **new** document by default. The tool must never *silently* overwrite or mutate a pre-existing document; in-place update happens only when the user explicitly opts in via `--update` (see §2.6).
 - **FR-6** — Exit with a zero status on success and a non-zero status on any failure, so the tool composes in scripts.
 
@@ -67,21 +67,22 @@ The tool must faithfully render the following, mapping each to the closest nativ
 The complete command surface, enumerated once (each line's behavior is specified by the requirements below):
 
 ```
-md2gd init [--client <client_secret.json>]         One-time setup (browser consent)
-md2gd <file.md> [--title <t>] [--open]             Convert into a new doc, print its URL
-md2gd <file.md> --update [<url|id>] [--title <t>]  Re-render into an existing doc
-md2gd --help | -h | help                           Usage
-md2gd --version | -V | version                     Version
+md2gd init [--client <client_secret.json>]                  One-time setup (browser consent)
+md2gd <file.md> [--title <t>] [--folder <url|id>] [--open]  Convert into a new doc, print its URL
+md2gd <file.md> --update [<url|id>] [--title <t>]           Re-render into an existing doc
+md2gd --help | -h | help                                   Usage
+md2gd --version | -V | version                             Version
 ```
 
 - **FR-21a** — Provide an `md2gd init` command for one-time setup: it accepts the user's downloaded OAuth **Desktop client** secret (e.g. `md2gd init --client client_secret.json`), stores it, and runs the consent flow once (AU-1), caching the token. After `init`, all conversion is pure command-line. Rationale: Google does not permit plain API keys for Drive/Docs writes, so a per-user OAuth token is required; `init` makes acquiring it a single explicit step rather than a hidden first-run side effect.
 - **FR-22** — Provide `--help` describing usage, arguments, and options.
 - **FR-23** — Provide `--version`.
 - **FR-24** — Allow overriding the document title (per FR-4).
-- **FR-25** — Docs must land in a dedicated location rather than the Drive root. **Constraint (see AU-3):** v1 uses the narrow `drive.file` scope, which only grants access to files the tool itself creates — it cannot move docs into an arbitrary pre-existing folder. Therefore the tool must create and remember its **own** default folder (e.g. "md2gd") and place docs there. Targeting an arbitrary user-chosen existing folder is **descoped from v1** (would require the broad, verification-triggering `drive` scope); it may return later as an explicit opt-in.
+- **FR-25** — Docs must land in a dedicated location rather than the Drive root. By default the tool creates and remembers its **own** folder (e.g. "md2gd") and places docs there. The user may override the destination per run with `--folder` (FR-27b), including a folder they did not create (e.g. a shared folder); this relies on the `drive` scope (AU-3). A `--folder` target the user cannot access, or that is not a folder, must fail with an actionable message and create nothing.
 - **FR-26** — Persist tool state across runs in a user-scoped config file so invocations coordinate (v1 stores the file→doc mapping of FR-42). The file lives in a user-scoped location with restrictive permissions (AU-2), is forward-compatible (unknown keys are preserved rather than clobbered so later versions can add settings), and a corrupt file must never abort a conversion. The concrete on-disk layout is enumerated in §2.7.
 - **FR-27** — Provide a way to open the created doc in the browser on demand (e.g. `--open`), while the default remains print-link-only.
 - **FR-27a** — Provide an `--update [<url-or-id>]` option that re-renders into an existing document rather than creating a new one (see §2.6). With no argument, it targets the doc previously created from the same input file; with an argument, it targets that specific doc.
+- **FR-27b** — Provide a `--folder <url-or-id>` option that places a newly created doc in the given Drive folder instead of the default folder (FR-25). It accepts either a full Drive folder URL or a bare folder id. It applies only when creating; with `--update` the target doc keeps its existing location and `--folder` has no effect.
 
 ### 2.5 Content edge cases requiring special handling
 
@@ -108,7 +109,7 @@ These are derived from analyzing the reference due-diligence report and are the 
 
 The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fresh doc every time breaks shared links and scatters near-duplicates across Drive. `--update` re-renders into the **same** document so its URL, Drive location, and shares stay put. This was deferred in the original §6; it is now in scope.
 
-**Scope constraint (inherits AU-3):** update works **only for documents md2gd itself created**, because v1 stays on the narrow `drive.file` scope. Re-rendering a doc the user made by hand in the Docs UI would require the broad `drive` scope (verification-triggering) and is **out of scope**. This is the right fit for the target loop — regenerating a report first produced by md2gd.
+**Scope (inherits AU-3):** because the tool uses the `drive` scope, `--update` may target **any document the user can edit** — one md2gd created, or one made by hand or shared into a folder. The tool never *silently* updates: a plain run always creates (FR-5), and an update requires either the explicit `--update <url|id>` or a remembered mapping for the file (FR-42).
 
 - **FR-38** — **Clear-and-rewrite semantics.** `--update` targets an existing doc, clears its body, and re-runs the normal conversion into it. Content diffing / in-place patching is explicitly **not** attempted: a cleared doc must render identically to a freshly created one from the same Markdown.
 - **FR-39** — **Read before destroy.** The tool must GET the target document *before* issuing any destructive call, so an auth failure, 404, or permission error leaves the target intact and the run exits non-zero with a clear message (per NF-3).
@@ -119,7 +120,7 @@ The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fres
   - `md2gd file.md --update` with **no argument** updates the doc previously created from that file (looked up in the mapping). `--update <url-or-id>` overrides with an explicit target and accepts either a full Docs URL or a bare document id.
   - A plain run (no `--update`) when a mapping already exists still **creates a new doc**, but prints a hint — e.g. `previously created <url> — pass --update to overwrite` — so the destructive path is never taken implicitly.
   - A stale mapping (target trashed or not found) must produce a clear error, not silently diverge into a new doc.
-- **FR-43** — **Honest limitations documented, not engineered around.** Google Docs comments anchored to cleared ranges will orphan, and a multi-round update is not atomic (a mid-run failure can leave the doc partially rewritten). These are acceptable for the single-user regenerate loop; they must be documented (README) rather than solved in v1. Targeting a hand-made doc must fail with an actionable message (e.g. `md2gd can only update documents it created`) rather than a raw `drive.file` 404.
+- **FR-43** — **Honest limitations documented, not engineered around.** Google Docs comments anchored to cleared ranges will orphan, and a multi-round update is not atomic (a mid-run failure can leave the doc partially rewritten). These are acceptable for the single-user regenerate loop; they must be documented (README) rather than solved in v1. An `--update` target the user cannot access or edit (wrong id, no permission, trashed) must fail at the read-before-destroy step (FR-39) with an actionable message, leaving nothing changed — never a raw API error.
 
 ### 2.7 Config & credential storage
 
@@ -165,10 +166,10 @@ Styling should be centralized/configurable enough that the default look can be a
 
 - **AU-1** — Authenticate to Google as the **user's personal Google account** using an OAuth "installed application" (desktop) flow, initiated by `md2gd init` (FR-21a). It opens the system browser for consent once (a loopback redirect captures the code); subsequent runs reuse a locally cached token. Plain API keys are **not** an option — Google rejects them for Drive/Docs writes — and service accounts are unsuitable (no personal Drive storage, wrong ownership), so a cached user OAuth token is the mechanism.
 - **AU-2** — Cached credentials/tokens must be stored securely in a user-scoped location with appropriately restrictive file permissions, and must never be committed to the repository.
-- **AU-3** — Request the **minimum OAuth scopes** necessary. v1 uses only `drive.file` (access limited to files the tool creates) plus the Docs scope needed for `documents.create`/`batchUpdate`. Do **not** request the broad `drive` (all-files) scope — it is a sensitive scope that triggers Google verification and is unnecessary given the FR-25 own-folder model.
+- **AU-3** — Request only the scope the tool's capabilities require, and no more. Because the tool must place docs in folders the user did not create (FR-27b) and update docs it did not itself create (§2.6), it uses the `drive` scope, which also covers the Docs edits (`documents.create`/`batchUpdate`), so no separate Docs scope is requested. This is a deliberate tradeoff: `drive` is a sensitive scope, but the narrower `drive.file` cannot reach user-created folders or foreign docs, which are core to the workflow. The tool must never request more than `drive`.
 - **AU-4** — Tokens must refresh automatically when expired without forcing a full re-consent, until revoked.
 - **AU-5** — Resetting local credentials must be possible and documented. v1 does this by deleting the config directory (§2.7), which removes the cached token and stored client secret; the next `init` re-consents from scratch.
-- **AU-6** — The tool must document the one-time Google Cloud project / OAuth client setup the user must perform, in clear step-by-step form (see §8). The docs **must** call out: (a) **publish the OAuth consent screen to "Production"** — leaving it in "Testing" causes Google to expire refresh tokens after 7 days, silently breaking AU-4; unverified-Production is fine for a personal tool, and (b) staying on `drive.file` keeps the app out of sensitive-scope verification entirely.
+- **AU-6** — The tool must document the one-time Google Cloud project / OAuth client setup the user must perform, in clear step-by-step form (see §8). The docs **must** call out: (a) **publish the OAuth consent screen to "Production"** — leaving it in "Testing" causes Google to expire refresh tokens after 7 days, silently breaking AU-4; and (b) that `drive` is a **sensitive scope**, so consent shows an "unverified app" warning the user clicks through — fine for a personal tool run against one's own account; distributing it to others would require Google verification.
 - **AU-7** — No document content or credentials may be sent to any third-party service other than Google's own APIs. All processing happens locally or within the user's Google account.
 - **AU-8** — The loopback consent callback must be protected against authorization-code injection: a random `state` is verified on return and PKCE (S256) is used. Denied consent and a timeout must both terminate `init` cleanly rather than hang.
 
@@ -194,14 +195,14 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 - **NF-11** — The §3.1 styling pain points (ST-11 through ST-14) must be covered by tests asserting the corresponding paragraph/table style fields are emitted (paragraph space-after, space-after-blocks, cell padding, space-before-headings).
 - **NF-12** — Tests must be deterministic and runnable offline (no dependency on live Google APIs or cached credentials). Any real end-to-end check against Google is a separate, opt-in step, not part of the default suite.
 - **NF-13** — The update path (§2.6) must be unit-tested against the mocked Google boundary: the body-clear requests (including the style reset and the already-empty-body case), the GET-before-destroy ordering, the rename-on-title-change, and the mapping lookup / override / stale-mapping behavior. As with NF-9, tests assert the *requests produced*, not just that code runs.
+- **NF-14** — The `--folder` option (FR-27b) must be unit-tested: extracting a folder id from a Drive folder URL and from a bare id, that a create places the doc under the given folder rather than the default (FR-25), and that `--update` ignores it. The title-cased filename fallback (FR-4) must likewise have dedicated tests.
 
 ---
 
 ## 6. Out of scope (v1)
 
 - Reverse conversion (Google Docs → Markdown).
-- ~~Updating/syncing a previously created doc in place.~~ **Now in scope** as "stable URL" mode — see §2.6 (FR-38–FR-43). Limited to docs md2gd created (`drive.file`); patching hand-made docs remains out of scope.
-- Updating a document md2gd did **not** create (a doc authored by hand in the Docs UI) — needs the broad `drive` scope and is out of scope (see FR-38 scope constraint).
+- ~~Updating/syncing a previously created doc in place.~~ **Now in scope** as "stable URL" mode — see §2.6 (FR-38–FR-43), for any doc the user can edit.
 - Headers / footers, and page numbers. The Docs API has no page-number field request, and a footer is a single block shared across all pages, so a live page number is not achievable via `batchUpdate` at all. A static title header is possible but low-value (the doc already opens with its H1) and is deferred; it can be added later as an isolated slice.
 - Batch conversion of many files in one invocation (nice-to-have, not required).
 - Multi-user / team / server deployment, or service-account automation.
@@ -225,7 +226,8 @@ The tool is considered done for v1 when all of the following hold:
 - **AC-6** — `md2gd init` and all §2.4 CLI options (`--help`, `--version`, title override, `--open`) work as specified.
 - **AC-7** — Error cases from NF-3 each produce a clear, non-crashing message and a non-zero exit code.
 - **AC-8** — No credentials or document content are transmitted anywhere except Google's APIs; token/secret files are gitignored.
-- **AC-9** — Re-running with `--update` on a doc md2gd created re-renders it at the **same** URL: the body reflects the edited Markdown, no prior-render style bleeds in, the title tracks the H1, and a failed GET leaves the doc untouched. Targeting a doc md2gd did not create fails with a clear message (FR-43), not a raw 404.
+- **AC-9** — Re-running with `--update` on an editable doc (whether md2gd created it or not) re-renders it at the **same** URL: the body reflects the edited Markdown, no prior-render style bleeds in, the title tracks the H1, and a failed GET leaves the doc untouched. An `--update` target the user cannot access fails with a clear message (FR-43), not a raw API error.
+- **AC-10** — Running `md2gd file.md --folder <url|id>` on a folder the user can write (including a shared folder they did not create) places the new doc in that folder; a plain run still lands in the default md2gd folder (FR-25, FR-27b).
 
 ---
 

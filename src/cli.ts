@@ -14,17 +14,18 @@ const HELP = `${NAME} v${VERSION}
 Convert a Markdown file into a professionally styled Google Doc.
 
 Usage:
-  ${NAME} init --client <client_secret.json>       One-time setup (browser consent)
-  ${NAME} <file.md> [--title <t>] [--open]         Convert into a new doc, print its URL
-  ${NAME} <file.md> --update [<url|id>] [--title <t>]  Re-render into an existing doc
+  ${NAME} init --client <client_secret.json>                 One-time setup (browser consent)
+  ${NAME} <file.md> [--title <t>] [--folder <url|id>] [--open]  Convert into a new doc, print its URL
+  ${NAME} <file.md> --update [<url|id>] [--title <t>]        Re-render into an existing doc
 
 Options:
-  --title <t>         Override the document title (defaults to the H1 or filename)
-  --update [<url|id>] Re-render into an existing doc instead of creating a new one.
-                      With no argument, targets the doc previously made from this file.
-  --open              Open the doc in your browser
-  -h, --help          Show this help
-  -V, --version       Show version
+  --title <t>          Override the document title (defaults to the H1 or filename)
+  --folder <url|id>    Create the doc in this Drive folder (URL or id) instead of the md2gd folder
+  --update [<url|id>]  Re-render into an existing doc instead of creating a new one.
+                       With no argument, targets the doc previously made from this file.
+  --open               Open the doc in your browser
+  -h, --help           Show this help
+  -V, --version        Show version
 `;
 
 function fail(message: string): void {
@@ -38,12 +39,13 @@ function finish(url: string, open: boolean): void {
 }
 
 async function runConvert(command: Extract<Command, { kind: "convert" }>): Promise<void> {
-  const { file, title, open, update, updateTarget } = command;
+  const { file, title, open, update, updateTarget, folder } = command;
   const secret = await loadStoredClientSecret();
   const client = new GoogleDocsClient({ getToken: () => getAccessToken(secret, Date.now()) });
 
   if (update) {
     // Stable-URL mode: re-render in place, so the URL and Drive location persist.
+    // The doc keeps its existing location, so --folder does not apply here.
     const documentId = await resolveUpdateTarget(file, updateTarget);
     await updateFile(file, { title }, client, documentId);
     finish(documentUrl(documentId), open);
@@ -53,7 +55,7 @@ async function runConvert(command: Extract<Command, { kind: "convert" }>): Promi
   // New doc. Note any prior doc from this file (so the destructive overwrite is
   // never implicit — the user must opt in with --update), then record the new one.
   const previous = await lookupDoc(file);
-  const documentId = await convertFile(file, { title }, client);
+  const documentId = await convertFile(file, { title, folder }, client);
   await recordDoc(file, documentId);
   if (previous) {
     process.stderr.write(`${NAME}: previously created ${documentUrl(previous)} — pass --update to overwrite it\n`);

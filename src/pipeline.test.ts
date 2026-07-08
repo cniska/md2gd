@@ -4,20 +4,30 @@ import type { DocRequest, DocumentResource } from "./docs";
 import type { DocsClient } from "./executor";
 import { recordDoc } from "./mapping";
 import { parseMarkdown } from "./parse";
-import { convertFile, deriveTitle, parseDocId, resolveUpdateTarget, updateFile } from "./pipeline";
+import { convertFile, deriveTitle, parseDocId, parseFolderId, resolveUpdateTarget, updateFile } from "./pipeline";
 
 describe("deriveTitle", () => {
   test("uses the first H1 when present", () => {
     expect(deriveTitle(parseMarkdown("# Quarterly Report\n\nBody\n"), "/x/doc.md")).toBe("Quarterly Report");
   });
 
-  test("falls back to the filename without extension", () => {
-    expect(deriveTitle(parseMarkdown("Body only\n"), "/x/due-diligence.md")).toBe("due-diligence");
+  test("falls back to the title-cased filename, splitting on - and _", () => {
+    expect(deriveTitle(parseMarkdown("Body only\n"), "/x/due-diligence.md")).toBe("Due Diligence");
+    expect(deriveTitle(parseMarkdown("Body only\n"), "/x/service_readiness_review.md")).toBe(
+      "Service Readiness Review",
+    );
+    expect(deriveTitle(parseMarkdown("Body only\n"), "/x/schema.md")).toBe("Schema");
+  });
+
+  test("preserves acronym casing in the filename fallback", () => {
+    expect(deriveTitle(parseMarkdown("Body only\n"), "/x/API-reference.md")).toBe("API Reference");
   });
 });
 
 class StubClient implements DocsClient {
-  createDocument(_title: string): Promise<{ documentId: string }> {
+  lastFolderId?: string;
+  createDocument(_title: string, folderId?: string): Promise<{ documentId: string }> {
+    this.lastFolderId = folderId;
     return Promise.resolve({ documentId: "doc-x" });
   }
   batchUpdate(_id: string, _requests: DocRequest[]): Promise<void> {
@@ -46,6 +56,32 @@ describe("convertFile", () => {
     const path = `${tmpdir()}/md2gd-empty-${Date.now()}.md`;
     await Bun.write(path, "   \n");
     await expect(convertFile(path, {}, new StubClient())).rejects.toThrow(/empty/);
+  });
+
+  test("passes the parsed --folder id to createDocument (FR-27b)", async () => {
+    const path = `${tmpdir()}/md2gd-folder-${Date.now()}.md`;
+    await Bun.write(path, "# Hello\n\nWorld.\n");
+    const client = new StubClient();
+    await convertFile(path, { folder: "https://drive.google.com/drive/folders/FOLDER123" }, client);
+    expect(client.lastFolderId).toBe("FOLDER123");
+  });
+
+  test("defaults to no folder id when --folder is absent", async () => {
+    const path = `${tmpdir()}/md2gd-nofolder-${Date.now()}.md`;
+    await Bun.write(path, "# Hello\n\nWorld.\n");
+    const client = new StubClient();
+    await convertFile(path, {}, client);
+    expect(client.lastFolderId).toBeUndefined();
+  });
+});
+
+describe("parseFolderId", () => {
+  test("extracts the id from a Drive folder URL", () => {
+    expect(parseFolderId("https://drive.google.com/drive/folders/1QzE1-xPW_zbF?usp=sharing")).toBe("1QzE1-xPW_zbF");
+  });
+
+  test("accepts a bare id unchanged", () => {
+    expect(parseFolderId("1QzE1-xPW_zbF")).toBe("1QzE1-xPW_zbF");
   });
 });
 
@@ -86,7 +122,7 @@ describe("resolveUpdateTarget", () => {
 });
 
 describe("updateFile", () => {
-  test("translates a drive.file 404 into an actionable message (FR-43)", async () => {
+  test("translates a 404 on the read into an actionable message (FR-43)", async () => {
     class NotFoundClient extends StubClient {
       override getDocument(_id: string): Promise<DocumentResource> {
         return Promise.reject(new Error("md2gd: Google API GET failed (404): File not found"));
@@ -95,7 +131,20 @@ describe("updateFile", () => {
     const md = `${tmpdir()}/upd-404-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");
     await expect(updateFile(md, {}, new NotFoundClient(), "doc-x")).rejects.toThrow(
-      /can only update documents it created/,
+      /cannot open document .* for update/,
+    );
+  });
+
+  test("translates a 403 on the read into the same actionable message (FR-43)", async () => {
+    class ForbiddenClient extends StubClient {
+      override getDocument(_id: string): Promise<DocumentResource> {
+        return Promise.reject(new Error("md2gd: Google API GET failed (403): insufficient permission"));
+      }
+    }
+    const md = `${tmpdir()}/upd-403-${Date.now()}.md`;
+    await Bun.write(md, "# R\n\nBody.\n");
+    await expect(updateFile(md, {}, new ForbiddenClient(), "doc-x")).rejects.toThrow(
+      /cannot open document .* for update/,
     );
   });
 });

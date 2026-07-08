@@ -42,17 +42,27 @@ export class GoogleDocsClient implements DocsClient {
     this.folderName = options.folderName ?? DEFAULT_FOLDER_NAME;
   }
 
-  async createDocument(title: string): Promise<{ documentId: string }> {
-    // Create the doc directly inside md2gd's folder via Drive. A Drive file's id
-    // is the Docs document id, so this avoids the add-parent-to-rooted-file move
-    // (which fails under Drive's single-parent model). drive.file covers it.
-    const folderId = await this.ensureFolder();
-    const doc = (await this.json("POST", `${DRIVE_API}?fields=id`, {
-      name: title,
-      mimeType: DOC_MIME,
-      parents: [folderId],
-    })) as { id: string };
-    return { documentId: doc.id };
+  async createDocument(title: string, folderId?: string): Promise<{ documentId: string }> {
+    // Create the doc directly inside its parent folder via Drive. A Drive file's
+    // id is the Docs document id, so this avoids the add-parent-to-rooted-file
+    // move (which fails under Drive's single-parent model). The parent is the
+    // caller's `--folder` if given, else md2gd's own default folder.
+    const parent = folderId ?? (await this.ensureFolder());
+    try {
+      const doc = (await this.json("POST", `${DRIVE_API}?fields=id`, {
+        name: title,
+        mimeType: DOC_MIME,
+        parents: [parent],
+      })) as { id: string };
+      return { documentId: doc.id };
+    } catch (error) {
+      if (folderId && error instanceof Error && /\((?:403|404)\)/.test(error.message)) {
+        throw new Error(
+          `md2gd: cannot create in folder ${folderId} — check the folder URL and that you can write to it`,
+        );
+      }
+      throw error;
+    }
   }
 
   async batchUpdate(documentId: string, requests: DocRequest[]): Promise<void> {

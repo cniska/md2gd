@@ -47,6 +47,17 @@ describe("parseArgs", () => {
     });
   });
 
+  test("--folder captures the destination folder", () => {
+    expect(parseArgs(["doc.md", "--folder", "https://drive.google.com/drive/folders/F1"])).toMatchObject({
+      kind: "convert",
+      folder: "https://drive.google.com/drive/folders/F1",
+    });
+  });
+
+  test("--folder with no value errors", () => {
+    expect(parseArgs(["doc.md", "--folder"]).kind).toBe("error");
+  });
+
   test("--update with an argument captures the explicit target", () => {
     const cmd = parseArgs(["doc.md", "--update", "https://docs.google.com/document/d/abc/edit"]);
     expect(cmd).toMatchObject({

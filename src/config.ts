@@ -18,10 +18,12 @@ export const TOKEN_PATH = `${CONFIG_DIR}/token.json`;
 export const CONFIG_PATH = `${CONFIG_DIR}/config.json`;
 
 /**
- * Minimal OAuth scopes: create/write only files this app touches, plus the Docs
- * scope for document editing. Never the broad all-files Drive scope.
+ * OAuth scope: `drive` (full Drive access, which also authorises the Docs API's
+ * create/batchUpdate). Required so the tool can place docs in folders the user
+ * did not create (`--folder`) and update docs it did not itself create — the
+ * narrower `drive.file` cannot reach either. See AU-3.
  */
-export const SCOPES = ["https://www.googleapis.com/auth/drive.file", "https://www.googleapis.com/auth/documents"];
+export const SCOPES = ["https://www.googleapis.com/auth/drive"];
 
 /** Loopback redirect target for the installed-app consent flow. */
 export const REDIRECT_HOST = "127.0.0.1";
