@@ -116,7 +116,7 @@ The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fres
 - **FR-40** — **No style bleed.** After clearing, the surviving paragraph must be reset to default body style with list markers removed, so the previous render's trailing heading/list style does not leak into the new content. An already-empty body must be handled without error.
 - **FR-41** — **Title stays in sync.** If the derived/overridden title differs from the target doc's current name, the tool must rename the Drive file to match, so the doc's title does not go stale after an update.
 - **FR-42** — **File→doc mapping (hybrid UX).**
-  - On a successful *create*, record `realpath(input) → documentId` in the config location (§2.4, FR-26).
+  - On a successful *create* **or `--update`**, record `realpath(input) → documentId` in the config location (§2.4, FR-26). Recording on update means a doc first targeted explicitly (`--update <url|id>`, including one md2gd did not create) is **adopted** into the mapping, so subsequent no-argument `--update` runs find it without re-passing the URL.
   - `md2gd file.md --update` with **no argument** updates the doc previously created from that file (looked up in the mapping). `--update <url-or-id>` overrides with an explicit target and accepts either a full Docs URL or a bare document id.
   - A plain run (no `--update`) when a mapping already exists still **creates a new doc**, but prints a hint — e.g. `previously created <url> — pass --update to overwrite` — so the destructive path is never taken implicitly.
   - A stale mapping (target trashed or not found) must produce a clear error, not silently diverge into a new doc.
@@ -128,7 +128,7 @@ All persisted state lives under a single user-scoped directory, created with own
 
 - **`client_secret.json`** — the OAuth Desktop client secret supplied to `md2gd init` (FR-21a). Owner-only.
 - **`token.json`** — the cached OAuth token, including the refresh token (AU-4). Owner-only.
-- **`config.json`** — tool state (FR-26). A JSON object whose `docs` key maps each input file's canonical absolute path to the id of the document last created from it (FR-42): `{ "docs": { "/abs/path/report.md": "<documentId>" } }`. Unknown top-level keys are preserved on write.
+- **`config.json`** — tool state (FR-26). A JSON object whose `docs` key maps each input file's canonical absolute path to the id of the document last created from or updated for it (FR-42): `{ "docs": { "/abs/path/report.md": "<documentId>" } }`. Unknown top-level keys are preserved on write.
 
 Deleting this directory resets the tool to its unconfigured state (AU-5). The layout and location must be documented (D-2).
 

@@ -147,4 +147,27 @@ describe("updateFile", () => {
       /cannot open document .* for update/,
     );
   });
+
+  test("records the file→doc mapping so a later no-arg update finds it (FR-42)", async () => {
+    const cfg = `${tmpdir()}/md2gd-adopt-${Date.now()}.json`;
+    const md = `${tmpdir()}/adopt-${Date.now()}.md`;
+    await Bun.write(md, "# R\n\nBody.\n");
+    // Simulates adopting an explicitly-targeted doc: update once, then a no-arg
+    // update resolves to that same doc without re-passing the URL.
+    await updateFile(md, {}, new StubClient(), "adopted-doc", cfg);
+    expect(await resolveUpdateTarget(md, undefined, cfg)).toBe("adopted-doc");
+  });
+
+  test("does not record when the update fails at the read", async () => {
+    class NotFoundClient extends StubClient {
+      override getDocument(_id: string): Promise<DocumentResource> {
+        return Promise.reject(new Error("md2gd: Google API GET failed (404): File not found"));
+      }
+    }
+    const cfg = `${tmpdir()}/md2gd-noadopt-${Date.now()}.json`;
+    const md = `${tmpdir()}/noadopt-${Date.now()}.md`;
+    await Bun.write(md, "# R\n\nBody.\n");
+    await expect(updateFile(md, {}, new NotFoundClient(), "missing", cfg)).rejects.toThrow();
+    await expect(resolveUpdateTarget(md, undefined, cfg)).rejects.toThrow(/no document remembered/);
+  });
 });

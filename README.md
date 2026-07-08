@@ -110,7 +110,7 @@ md2gd ~/notes/report.md            # first run — creates the doc, remembers it
 md2gd ~/notes/report.md --update   # re-renders into that same doc, same URL
 ```
 
-With no argument, `--update` targets the doc md2gd previously created from that file (remembered in `~/.md2gd/config.json`). Pass an explicit target — a full Docs URL or a bare id — to override:
+With no argument, `--update` targets the doc previously created from — or last updated for — that file (remembered in `config.json`). Pass an explicit target — a full Docs URL or a bare id — to override, or to **adopt an existing doc**: the first `--update <url|id>` binds that file to that doc (even one you made by hand), so afterwards a plain `--update` finds it automatically:
 
 ```
 md2gd report.md --update https://docs.google.com/document/d/1AbC…/edit

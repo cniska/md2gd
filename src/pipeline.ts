@@ -3,7 +3,7 @@ import { toString as mdastToString } from "mdast-util-to-string";
 import { CONFIG_PATH } from "./config";
 import type { DocsClient } from "./executor";
 import { executeDocument, updateDocument } from "./executor";
-import { lookupDoc } from "./mapping";
+import { lookupDoc, recordDoc } from "./mapping";
 import { parseMarkdown } from "./parse";
 import { planDocument } from "./plan";
 
@@ -72,10 +72,15 @@ export async function updateFile(
   options: ConvertOptions,
   client: DocsClient,
   documentId: string,
+  configPath: string = CONFIG_PATH,
 ): Promise<void> {
   const tree = await loadTree(filePath);
   const title = options.title ?? deriveTitle(tree, filePath);
   await updateDocument(client, documentId, title, planDocument(tree));
+  // Remember this file → doc binding, so a later no-argument `--update` finds it.
+  // This is what adopts a doc first targeted explicitly (`--update <url|id>`) —
+  // including one md2gd did not create — into the seamless regenerate loop (FR-42).
+  await recordDoc(filePath, documentId, configPath);
 }
 
 /** Extract a Google Docs document id from a full edit URL or accept a bare id. */
