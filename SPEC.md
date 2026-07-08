@@ -57,9 +57,9 @@ The tool must faithfully render the following, mapping each to the closest nativ
 - **FR-15** — Fenced and indented code blocks, in a monospace font with visual distinction from body text (e.g. shaded background or bordered block). Language hints need not produce syntax highlighting in v1.
 - **FR-16** — Blockquotes, visually distinct from body text.
 - **FR-17** — Horizontal rules (`---`) are **ignored** (produce no output). A bordered rule renders poorly in Google Docs, and heading spacing already separates sections, so thematic breaks are dropped rather than drawn.
-- **FR-18** — Images. **URL-referenced images** (fetchable by Google's servers) are embedded inline at a reasonable width in v1. **Local-path images** are lower priority — the Docs API cannot embed a local file directly (it needs a Google-reachable URL), so v1 may warn-and-skip them per FR-21 rather than implement upload-and-temporary-link plumbing. (The reference document contains no images, so this is low-value for v1.) In all cases, an image that cannot be fetched/read must warn and continue, never abort the conversion.
+- **FR-18** — Images degrade to their alt text (readable text, per FR-21); the tool never crashes on an image. Actual embedding is **out of scope for v1**: the reference documents contain no images, so it is low-value, and inline embedding via the Docs API is a self-contained slice (URL-reachable images via `insertInlineImage`; local images need upload plumbing) that can return later.
 - **FR-19** — Links whose target a reader of the document can follow must remain clickable in the output. Links to targets that do not resolve outside the source tree — relative paths, bare filenames, in-page anchors, `file:` URLs — must render as plain text rather than dead links (see §9 auto-linking policy).
-- **FR-20** — Footnotes, rendered as Google Docs footnotes or an endnotes section if native footnotes are impractical.
+- **FR-20** — Footnotes degrade to readable text (per FR-21) without crashing. Native Google Docs footnotes are **out of scope for v1**: footnotes are a niche Markdown extension (not CommonMark) absent from the reference documents, and the Docs API's separate footnote segments do not fit the tool's index model — low value against real friction.
 - **FR-21** — Any Markdown construct not explicitly listed must degrade gracefully — rendered as readable text rather than raw markup or a crash.
 
 ### 2.4 Configuration & options (CLI)
@@ -206,6 +206,7 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 - Batch conversion of many files in one invocation (nice-to-have, not required).
 - Multi-user / team / server deployment, or service-account automation.
 - Syntax highlighting inside code blocks.
+- Image embedding (images degrade to alt text — FR-18) and native footnotes (footnotes degrade to text — FR-20).
 - Mermaid / diagram rendering, LaTeX math rendering.
 - A GUI or web interface.
 - Sharing/permission management of the created doc beyond it existing in the user's own Drive.

@@ -120,7 +120,7 @@ A plain run (no `--update`) never overwrites: if a doc already exists for the fi
 
 Headings, **bold**/*italic*/~~strikethrough~~, `inline code` and fenced code blocks, links, ordered/unordered/nested and task lists, blockquotes, and tables (with sized columns, padded cells, and a shaded header row). Emoji and non-ASCII text are preserved. Horizontal rules (`---`) are intentionally ignored — heading spacing already separates sections.
 
-Not yet supported (they degrade to readable text): embedded local images, footnotes, and per-level markers for mixed-type nested lists.
+Not yet supported (they degrade to readable text): images (rendered as their alt text), footnotes, and per-level markers for mixed-type nested lists.
 
 ## Configuration and credentials
 
