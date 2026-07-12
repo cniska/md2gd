@@ -32,6 +32,12 @@ interface BulletSpec {
 interface Context {
   requests: DocRequest[];
   bullets: BulletSpec[];
+  /**
+   * Leading nesting tabs that `createParagraphBullets` will strip. The cursor
+   * counts them (they exist while the requests run), but the stripped document
+   * is that many code units shorter, so the returned end index subtracts them.
+   */
+  strippedTabs: number;
 }
 
 /**
@@ -57,7 +63,7 @@ export function convertNodes(
   startIndex: number,
   options: { afterTable?: boolean } = {},
 ): { requests: DocRequest[]; endIndex: number } {
-  const ctx: Context = { requests: [], bullets: [] };
+  const ctx: Context = { requests: [], bullets: [], strippedTabs: 0 };
   let cursor = startIndex;
 
   for (const node of nodes) {
@@ -77,13 +83,13 @@ export function convertNodes(
     });
   }
 
-  return { requests: ctx.requests, endIndex: cursor };
+  return { requests: ctx.requests, endIndex: cursor - ctx.strippedTabs };
 }
 
 function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
   switch (node.type) {
     case "list":
-      return appendList(node, 0, cursor, ctx);
+      return appendList(node, 0, cursor, ctx, false);
     case "heading":
       return appendParagraph(node.children, cursor, ctx, 0, headingParagraphStyle(node.depth));
     case "paragraph": {
@@ -192,15 +198,18 @@ function appendBlockquote(node: Blockquote, cursor: number, ctx: Context): numbe
   return cursor;
 }
 
-function appendList(list: List, depth: number, cursor: number, ctx: Context): number {
+function appendList(list: List, depth: number, cursor: number, ctx: Context, bulletedFromParent: boolean): number {
   // A task list renders its checked state as a leading glyph (the Docs API can't
   // pre-check a native checklist bullet), so it uses no bullet preset of its own.
   const task = isTaskList(list);
+  // The outermost list decides whether a bullet preset covers the whole (nested)
+  // range; nested lists inherit it. Only a bulleted range has its tabs stripped.
+  const bulleted = depth === 0 ? !task : bulletedFromParent;
   const listStart = cursor;
   const requestStart = ctx.requests.length;
 
   for (const item of list.children) {
-    cursor = appendListItem(item, depth, cursor, ctx, task);
+    cursor = appendListItem(item, depth, cursor, ctx, task, bulleted);
   }
 
   if (depth === 0 && cursor > listStart) {
@@ -214,21 +223,28 @@ function appendList(list: List, depth: number, cursor: number, ctx: Context): nu
   return cursor;
 }
 
-function appendListItem(item: ListItem, depth: number, cursor: number, ctx: Context, taskList: boolean): number {
+function appendListItem(
+  item: ListItem,
+  depth: number,
+  cursor: number,
+  ctx: Context,
+  taskList: boolean,
+  bulleted: boolean,
+): number {
   let first = true;
   const prefix = itemPrefix(item, taskList);
   for (const child of item.children) {
     if (child.type === "list") {
-      cursor = appendList(child, depth + 1, cursor, ctx);
+      cursor = appendList(child, depth + 1, cursor, ctx, bulleted);
     } else if (child.type === "paragraph") {
       // A task list has no bullet preset (the glyph is the marker), so the leading
       // glyph goes on the item's first line — including a plain "•" for any non-task
       // item mixed into the list, so it isn't left unmarked.
       const inline = first && prefix ? [textNode(prefix), ...child.children] : child.children;
-      cursor = appendParagraph(inline, cursor, ctx, depth, listItemParagraphStyle());
+      cursor = appendParagraph(inline, cursor, ctx, depth, listItemParagraphStyle(), bulleted);
       first = false;
     } else {
-      cursor = appendRaw(mdastToString(child), cursor, ctx, depth, listItemParagraphStyle());
+      cursor = appendRaw(mdastToString(child), cursor, ctx, depth, listItemParagraphStyle(), bulleted);
       first = false;
     }
   }
@@ -270,7 +286,9 @@ function appendParagraph(
   ctx: Context,
   indent: number,
   spec: ParagraphStyleSpec,
+  bulleted = false,
 ): number {
+  if (bulleted) ctx.strippedTabs += indent;
   const tabs = "\t".repeat(indent);
   const base = cursor + tabs.length;
   const content = inlineRuns(inline);
@@ -284,7 +302,15 @@ function appendParagraph(
   return emitParagraph(`${tabs}${content.text}`, styleRequests, cursor, ctx, spec);
 }
 
-function appendRaw(value: string, cursor: number, ctx: Context, indent: number, spec: ParagraphStyleSpec): number {
+function appendRaw(
+  value: string,
+  cursor: number,
+  ctx: Context,
+  indent: number,
+  spec: ParagraphStyleSpec,
+  bulleted = false,
+): number {
+  if (bulleted) ctx.strippedTabs += indent;
   return emitParagraph(`${"\t".repeat(indent)}${value}`, [], cursor, ctx, spec);
 }
 

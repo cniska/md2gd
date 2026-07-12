@@ -154,6 +154,24 @@ describe("convert lists", () => {
     expect(bs[0]?.createParagraphBullets.range).toEqual({ startIndex: 1, endIndex: 6 });
   });
 
+  test("end index discounts the tabs bulleting will strip, so a following table lands", () => {
+    // Nested list: "a\n\tb\n" is 5 code units from index 1, but bulleting strips
+    // the one leading tab, so the real body ends at 5, not 6. A table placed at
+    // the raw end would be past the segment's end and fail to insert.
+    const nested = parseMarkdown("- a\n  - b\n");
+    expect(convertNodes(nested.children, 1).endIndex).toBe(5);
+    // A flat list has no nesting tabs, so its end index is unchanged.
+    const flat = parseMarkdown("- a\n- b\n");
+    expect(convertNodes(flat.children, 1).endIndex).toBe(5);
+  });
+
+  test("a task list keeps its tabs (no bullet preset strips them), so the end index counts them", () => {
+    // A task list uses glyphs, not a bullet preset, so nothing strips the tab.
+    const reqs = convertNodes(parseMarkdown("- [ ] a\n  - [ ] b\n").children, 1);
+    expect(insertedText(reqs.requests)).toBe("☐ a\n\t☐ b\n");
+    expect(reqs.endIndex).toBe(1 + "☐ a\n\t☐ b\n".length);
+  });
+
   test("a task list renders checked and unchecked glyphs, preserving state", () => {
     const reqs = convert(parseMarkdown("- [ ] todo\n- [x] done\n"));
     // Checked state survives as a leading glyph rather than being dropped.
