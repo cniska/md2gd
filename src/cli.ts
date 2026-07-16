@@ -3,6 +3,7 @@ import type { Command } from "./args";
 import { parseArgs } from "./args";
 import { documentUrl, GoogleDocsClient } from "./google";
 import { loadStoredClientSecret, runInit } from "./init";
+import type { LinkStats } from "./links";
 import { lookupDoc, recordDoc } from "./mapping";
 import { getAccessToken } from "./oauth";
 import { openInBrowser } from "./open";
@@ -15,12 +16,13 @@ Convert a Markdown file into a professionally styled Google Doc.
 
 Usage:
   ${NAME} init --client <client_secret.json>                 One-time setup (browser consent)
-  ${NAME} <file.md> [--title <t>] [--folder <url|id>] [--open]  Convert into a new doc, print its URL
-  ${NAME} <file.md> --update [<url|id>] [--title <t>]        Re-render into an existing doc
+  ${NAME} <file.md> [--title <t>] [--folder <url|id>] [--links <map>] [--open]  Convert into a new doc, print its URL
+  ${NAME} <file.md> --update [<url|id>] [--title <t>] [--links <map>]        Re-render into an existing doc
 
 Options:
   --title <t>          Override the document title (defaults to the H1 or filename)
   --folder <url|id>    Create the doc in this Drive folder (URL or id) instead of the md2gd folder
+  --links <map.json>   Rewrite relative links to other docs in this path→URL map into live Doc links
   --update [<url|id>]  Re-render into an existing doc instead of creating a new one.
                        With no argument, targets the doc previously made from this file.
   --open               Open the doc in your browser
@@ -38,8 +40,18 @@ function finish(url: string, open: boolean): void {
   if (open) openInBrowser(url);
 }
 
+// Summarise the link rewrite on stderr — never stdout, which carries only the
+// doc URL that scripts parse. Silent only when there was nothing to say.
+function reportLinks(stats: LinkStats): void {
+  if (stats.rewritten === 0 && stats.unmatched === 0) return;
+  const parts = [`${stats.rewritten} cross-link${stats.rewritten === 1 ? "" : "s"} linked`];
+  if (stats.anchorsDropped > 0) parts.push(`${stats.anchorsDropped} anchor(s) dropped`);
+  if (stats.unmatched > 0) parts.push(`${stats.unmatched} unmatched`);
+  process.stderr.write(`${NAME}: ${parts.join(", ")}\n`);
+}
+
 async function runConvert(command: Extract<Command, { kind: "convert" }>): Promise<void> {
-  const { file, title, open, update, updateTarget, folder } = command;
+  const { file, title, open, update, updateTarget, folder, links } = command;
   const secret = await loadStoredClientSecret();
   const client = new GoogleDocsClient({ getToken: () => getAccessToken(secret, Date.now()) });
 
@@ -47,7 +59,7 @@ async function runConvert(command: Extract<Command, { kind: "convert" }>): Promi
     // Stable-URL mode: re-render in place, so the URL persists. A --folder here
     // moves the doc into that folder (relocate) rather than creating a new one.
     const documentId = await resolveUpdateTarget(file, updateTarget);
-    await updateFile(file, { title, folder }, client, documentId);
+    await updateFile(file, { title, folder, links, onLinks: reportLinks }, client, documentId);
     finish(documentUrl(documentId), open);
     return;
   }
@@ -55,7 +67,7 @@ async function runConvert(command: Extract<Command, { kind: "convert" }>): Promi
   // New doc. Note any prior doc from this file (so the destructive overwrite is
   // never implicit — the user must opt in with --update), then record the new one.
   const previous = await lookupDoc(file);
-  const documentId = await convertFile(file, { title, folder }, client);
+  const documentId = await convertFile(file, { title, folder, links, onLinks: reportLinks }, client);
   await recordDoc(file, documentId);
   if (previous) {
     process.stderr.write(`${NAME}: previously created ${documentUrl(previous)} — pass --update to overwrite it\n`);

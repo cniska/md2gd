@@ -1,8 +1,10 @@
+import { dirname, resolve } from "node:path";
 import type { Root } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
 import { CONFIG_PATH } from "./config";
 import type { DocsClient } from "./executor";
 import { executeDocument, updateDocument } from "./executor";
+import { LinkMapSchema, type LinkStats, resolveLinkMap, rewriteLinks } from "./links";
 import { lookupDoc, recordDoc } from "./mapping";
 import { parseMarkdown } from "./parse";
 import { planDocument } from "./plan";
@@ -38,6 +40,10 @@ export interface ConvertOptions {
   title?: string;
   /** Destination Drive folder for a new doc, as a folder URL or bare id. */
   folder?: string;
+  /** Path to a link map; relative cross-doc links resolve against it. */
+  links?: string;
+  /** Reports what the link rewrite changed, so the CLI can summarise it. */
+  onLinks?: (stats: LinkStats) => void;
 }
 
 /** Read and validate a Markdown file, returning its parsed AST. */
@@ -52,11 +58,37 @@ async function loadTree(filePath: string): Promise<Root> {
 }
 
 /**
+ * When a `--links` map is given, rewrite the tree's relative cross-doc links to
+ * the mapped Doc URLs and report what changed. A missing or malformed map fails
+ * here, before any document is written.
+ */
+async function applyLinkMap(tree: Root, filePath: string, options: ConvertOptions): Promise<void> {
+  if (!options.links) return;
+  const map = await loadLinkMap(options.links);
+  options.onLinks?.(rewriteLinks(tree, filePath, map));
+}
+
+async function loadLinkMap(mapPath: string): Promise<Map<string, string>> {
+  const file = Bun.file(mapPath);
+  if (!(await file.exists())) throw new Error(`md2gd: link map not found: ${mapPath}`);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await file.text());
+  } catch {
+    throw new Error(`md2gd: link map is not valid JSON: ${mapPath}`);
+  }
+  const parsed = LinkMapSchema.safeParse(raw);
+  if (!parsed.success) throw new Error(`md2gd: link map must be a JSON object of path → url: ${mapPath}`);
+  return resolveLinkMap(parsed.data, dirname(resolve(mapPath)));
+}
+
+/**
  * Read a Markdown file and produce a **new** Google Doc via the given client.
  * Returns the new document id. Rejects with a clear message on missing/empty input.
  */
 export async function convertFile(filePath: string, options: ConvertOptions, client: DocsClient): Promise<string> {
   const tree = await loadTree(filePath);
+  await applyLinkMap(tree, filePath, options);
   const title = options.title ?? deriveTitle(tree, filePath);
   const folderId = options.folder ? parseFolderId(options.folder) : undefined;
   return executeDocument(client, title, planDocument(tree), folderId);
@@ -75,6 +107,7 @@ export async function updateFile(
   configPath: string = CONFIG_PATH,
 ): Promise<void> {
   const tree = await loadTree(filePath);
+  await applyLinkMap(tree, filePath, options);
   const title = options.title ?? deriveTitle(tree, filePath);
   const folderId = options.folder ? parseFolderId(options.folder) : undefined;
   await updateDocument(client, documentId, title, planDocument(tree), folderId);

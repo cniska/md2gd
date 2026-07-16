@@ -11,6 +11,7 @@ export type Command =
       update: boolean;
       updateTarget?: string;
       folder?: string;
+      links?: string;
     }
   | { kind: "error"; message: string };
 
@@ -47,6 +48,7 @@ export function parseArgs(argv: string[]): Command {
   let update = false;
   let updateTarget: string | undefined;
   let folder: string | undefined;
+  let links: string | undefined;
   for (let i = 1; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--open") {
@@ -60,6 +62,11 @@ export function parseArgs(argv: string[]): Command {
       const value = takeValue(argv, i, "--folder");
       if (typeof value !== "string") return { kind: "error", message: value.error };
       folder = value;
+      i++;
+    } else if (arg === "--links") {
+      const value = takeValue(argv, i, "--links");
+      if (typeof value !== "string") return { kind: "error", message: value.error };
+      links = value;
       i++;
     } else if (arg === "--update") {
       // Optional argument: an explicit doc url/id if the next token isn't a flag,
@@ -76,5 +83,5 @@ export function parseArgs(argv: string[]): Command {
   }
 
   if (first === undefined || first.startsWith("-")) return { kind: "error", message: "expected a markdown file path" };
-  return { kind: "convert", file: first, title, open, update, updateTarget, folder };
+  return { kind: "convert", file: first, title, open, update, updateTarget, folder, links };
 }

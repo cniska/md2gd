@@ -85,12 +85,13 @@ Upgrading from an earlier version? The OAuth scope changed, so re-run `md2gd ini
 ## Usage
 
 ```
-md2gd <file.md> [--title <title>] [--folder <url|id>] [--open]
-md2gd <file.md> --update [<url|id>] [--title <title>] [--open]
+md2gd <file.md> [--title <title>] [--folder <url|id>] [--links <map.json>] [--open]
+md2gd <file.md> --update [<url|id>] [--title <title>] [--links <map.json>] [--open]
 ```
 
 - `--title <title>` — override the document title (defaults to the file's top `# H1`, else its title-cased filename, e.g. `service-readiness-review.md` → "Service Readiness Review").
 - `--folder <url|id>` — the destination Drive folder (a folder URL or bare id). On a new conversion it places the doc there instead of the default `md2gd` folder; with `--update` it moves the existing doc into that folder (same URL).
+- `--links <map.json>` — turn relative links between docs into live Doc links (see below).
 - `--update [<url|id>]` — re-render into an existing doc instead of creating a new one (see below).
 - `--open` — open the doc in your browser afterwards.
 - `md2gd --help` / `md2gd --version`.
@@ -100,6 +101,30 @@ By default each run creates a new document in an `md2gd` folder in your Drive an
 ```
 md2gd docs/schema.md --folder https://drive.google.com/drive/folders/1QzE1-xPWzbF…
 ```
+
+## Cross-document links
+
+When you mirror a set of Markdown docs to Google Docs, the relative links between them (`[reference](reference/api.md)`, `[guide](../guide.md)`) would be dead in the output — a Doc can't follow a `.md` path — so md2gd renders them as plain text. Pass `--links <map.json>` to turn any such link whose target is *also* a mapped doc into a live hyperlink to that doc's Google Doc:
+
+```
+md2gd guide.md --update --links links.json
+```
+
+The map is a JSON object mapping each document's path to its Google Doc id:
+
+```json
+{
+  "guide.md": "1AbCdEfGhIjKlMnOpQrStUvWxYz",
+  "reference/api.md": "1ZyXwVuTsRqPoNmLkJiHgFeDcBa"
+}
+```
+
+- Keys resolve **relative to the map file's own location**, so the map is portable and independent of where you run md2gd from.
+- A link's target resolves relative to the source Markdown file (matching how Markdown renderers work), so `reference/api.md` from a root-level `guide.md`, and `../guide.md` from `reference/api.md`, both find their entry.
+- Only the link **target** changes — the visible link text is never touched.
+- A `#heading` fragment on a matched link is dropped (a Doc URL can't address a Markdown heading). Links to docs not in the map, in-page anchors, and normal `https://` links are left exactly as they are.
+
+A map value may also be a full Docs URL — a bare id is just cleaner. md2gd prints a one-line summary to stderr (e.g. `md2gd: 9 cross-links linked, 4 unmatched`), so it never interferes with the doc URL on stdout.
 
 ## Updating a doc in place (stable URL)
 

@@ -58,7 +58,7 @@ The tool must faithfully render the following, mapping each to the closest nativ
 - **FR-16** — Blockquotes, visually distinct from body text.
 - **FR-17** — Horizontal rules (`---`) are **ignored** (produce no output). A bordered rule renders poorly in Google Docs, and heading spacing already separates sections, so thematic breaks are dropped rather than drawn.
 - **FR-18** — Images degrade to their alt text (readable text, per FR-21); the tool never crashes on an image. Actual embedding is **out of scope for v1**: the reference documents contain no images, so it is low-value, and inline embedding via the Docs API is a self-contained slice (URL-reachable images via `insertInlineImage`; local images need upload plumbing) that can return later.
-- **FR-19** — Links whose target a reader of the document can follow must remain clickable in the output. Links to targets that do not resolve outside the source tree — relative paths, bare filenames, in-page anchors, `file:` URLs — must render as plain text rather than dead links (see §9 auto-linking policy).
+- **FR-19** — Links whose target a reader of the document can follow must remain clickable in the output. Links to targets that do not resolve outside the source tree — relative paths, bare filenames, in-page anchors, `file:` URLs — must render as plain text rather than dead links (see §9 auto-linking policy) — except a relative link whose target is present in a supplied link map (FR-27c), which is upgraded to a live link to that document's Google Doc URL.
 - **FR-20** — Footnotes degrade to readable text (per FR-21) without crashing. Native Google Docs footnotes are **out of scope for v1**: footnotes are a niche Markdown extension (not CommonMark) absent from the reference documents, and the Docs API's separate footnote segments do not fit the tool's index model — low value against real friction.
 - **FR-21** — Any Markdown construct not explicitly listed must degrade gracefully — rendered as readable text rather than raw markup or a crash.
 
@@ -67,11 +67,11 @@ The tool must faithfully render the following, mapping each to the closest nativ
 The complete command surface, enumerated once (each line's behavior is specified by the requirements below):
 
 ```
-md2gd init [--client <client_secret.json>]                  One-time setup (browser consent)
-md2gd <file.md> [--title <t>] [--folder <url|id>] [--open]  Convert into a new doc, print its URL
-md2gd <file.md> --update [<url|id>] [--title <t>]           Re-render into an existing doc
-md2gd --help | -h | help                                   Usage
-md2gd --version | -V | version                             Version
+md2gd init [--client <client_secret.json>]                              One-time setup (browser consent)
+md2gd <file.md> [--title <t>] [--folder <url|id>] [--links <map>] [--open]  Convert into a new doc, print its URL
+md2gd <file.md> --update [<url|id>] [--title <t>] [--links <map>]           Re-render into an existing doc
+md2gd --help | -h | help                                               Usage
+md2gd --version | -V | version                                         Version
 ```
 
 - **FR-21a** — Provide an `md2gd init` command for one-time setup: it accepts the user's downloaded OAuth **Desktop client** secret (e.g. `md2gd init --client client_secret.json`), stores it, and runs the consent flow once (AU-1), caching the token. After `init`, all conversion is pure command-line. Rationale: Google does not permit plain API keys for Drive/Docs writes, so a per-user OAuth token is required; `init` makes acquiring it a single explicit step rather than a hidden first-run side effect.
@@ -83,6 +83,7 @@ md2gd --version | -V | version                             Version
 - **FR-27** — Provide a way to open the created doc in the browser on demand (e.g. `--open`), while the default remains print-link-only.
 - **FR-27a** — Provide an `--update [<url-or-id>]` option that re-renders into an existing document rather than creating a new one (see §2.6). With no argument, it targets the doc previously created from the same input file; with an argument, it targets that specific doc.
 - **FR-27b** — Provide a `--folder <url-or-id>` option naming a destination Drive folder, accepting either a full Drive folder URL or a bare folder id. On a create, the new doc is placed in that folder instead of the default folder (FR-25). On an `--update`, the target doc is moved into that folder (its URL is unchanged); with no `--folder`, an update leaves the doc where it is. A folder the user cannot access, or that is not a folder, must fail with an actionable message before any destructive change.
+- **FR-27c** — Provide a `--links <path>` option naming a JSON file that maps document paths to their published Google Doc URLs (typically the same map a sync workflow already keeps to track each doc's URL). When supplied, a relative Markdown link whose target resolves to a path in the map renders as a live hyperlink to that document's Doc URL, instead of the plain text it would otherwise be (FR-19). This makes cross-references within a set of related documents clickable in the generated Docs. The link **text** is never altered — only the destination changes. Resolution: a link's target is resolved relative to the source Markdown file's own location (matching how Markdown renderers resolve relative links); map keys are resolved relative to the map file's location, so a repo-root map works regardless of the working directory; a target given as a bare document id or a full edit URL is accepted and normalised to a followable Doc URL. Any `#fragment` on a matched link is dropped — a Doc URL cannot address a Markdown heading. Links with a followable scheme, in-page anchors, and targets absent from the map are left exactly as FR-19 specifies. Only inline links (`[text](path)`) are considered; a reference-style link renders as plain text as it would without a map. A missing or malformed map file must fail with an actionable message before any document is written. The tool reports a one-line summary — to stderr, so it never pollutes the printed doc URL (FR-3) — of how many links were rewritten, how many anchors were dropped, and how many relative links went unmatched.
 
 ### 2.5 Content edge cases requiring special handling
 
@@ -196,6 +197,7 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 - **NF-12** — Tests must be deterministic and runnable offline (no dependency on live Google APIs or cached credentials). Any real end-to-end check against Google is a separate, opt-in step, not part of the default suite.
 - **NF-13** — The update path (§2.6) must be unit-tested against the mocked Google boundary: the body-clear requests (including the style reset and the already-empty-body case), the GET-before-destroy ordering, the rename-on-title-change, and the mapping lookup / override / stale-mapping behavior. As with NF-9, tests assert the *requests produced*, not just that code runs.
 - **NF-14** — The `--folder` option (FR-27b) must be unit-tested: extracting a folder id from a Drive folder URL and from a bare id, that a create places the doc under the given folder rather than the default (FR-25), and that `--update` ignores it. The title-cased filename fallback (FR-4) must likewise have dedicated tests.
+- **NF-15** — The `--links` cross-document resolution (FR-27c) must be unit-tested against representative cases: a relative link to a mapped doc becomes the mapped Doc URL, a matched link with an anchor drops the fragment, an unmatched relative link and an in-page anchor stay plain text, keys resolve relative to the map file, and a bare id / edit URL target normalises. As with NF-9, assert the produced output (rewritten AST / requests), not just that code runs.
 
 ---
 
@@ -228,6 +230,7 @@ The tool is considered done for v1 when all of the following hold:
 - **AC-8** — No credentials or document content are transmitted anywhere except Google's APIs; token/secret files are gitignored.
 - **AC-9** — Re-running with `--update` on an editable doc (whether md2gd created it or not) re-renders it at the **same** URL: the body reflects the edited Markdown, no prior-render style bleeds in, the title tracks the H1, and a failed GET leaves the doc untouched. An `--update` target the user cannot access fails with a clear message (FR-43), not a raw API error.
 - **AC-10** — Running `md2gd file.md --folder <url|id>` on a folder the user can write (including a shared folder they did not create) places the new doc in that folder; a plain run still lands in the default md2gd folder (FR-25, FR-27b).
+- **AC-11** — Running `md2gd file.md --links <map>` renders a relative cross-reference to another document in the map as a clickable link to that document's Doc URL, while a reference to a document absent from the map remains plain text (FR-27c).
 
 ---
 
@@ -266,5 +269,6 @@ These are explicitly **not** constrained by this spec; choose what best satisfie
 
 - **Soft line breaks (FR-32):** render a single newline within a paragraph as a line break (i.e. treat source line breaks as intended). The reference document is not hard-wrapped at a column width, so this reproduces author intent without side effects. If a future document turns out to be hard-wrapped, revisit.
 - **Auto-linking (FR-37):** do **not** invent hyperlinks from bare domains or fabricate link targets. A link becomes clickable only when its target resolves outside the source document — an absolute URL with a followable scheme (`http`, `https`, `mailto`, `tel`). Explicit Markdown links to a local target (a relative path, bare filename, or in-page anchor like `#section`) and unsafe schemes (`javascript:`, `data:`, `file:`) render as plain styled text: they would be dead links in a Google Doc (FR-19). A scheme-less bare domain like `partybook-one.vercel.app` likewise stays plain text, unchanged.
+- **Cross-document links (FR-27c):** with no `--links` map the rule above is complete — relative links stay plain text. A supplied map adds exactly one rule: a relative link whose target, resolved against the source file's directory with any fragment stripped, matches a map entry becomes a live link to that entry's Doc URL. Resolution is lexical — no filesystem canonicalisation, so a symlinked doc path is a documented non-match — and matching is case-sensitive. Nothing else changes: unmatched relative links, in-page anchors, and unsafe schemes remain plain text, and link text is never rewritten.
 
 The implementation approach, the UTF-16 offset hazard, and the two-phase table flow are non-normative and documented in `docs/architecture.md`.

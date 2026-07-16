@@ -58,6 +58,17 @@ describe("parseArgs", () => {
     expect(parseArgs(["doc.md", "--folder"]).kind).toBe("error");
   });
 
+  test("--links captures the map path", () => {
+    expect(parseArgs(["doc.md", "--links", "docs-map.json"])).toMatchObject({
+      kind: "convert",
+      links: "docs-map.json",
+    });
+  });
+
+  test("--links with no value errors", () => {
+    expect(parseArgs(["doc.md", "--links"]).kind).toBe("error");
+  });
+
   test("--update with an argument captures the explicit target", () => {
     const cmd = parseArgs(["doc.md", "--update", "https://docs.google.com/document/d/abc/edit"]);
     expect(cmd).toMatchObject({

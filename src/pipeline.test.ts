@@ -26,7 +26,9 @@ describe("deriveTitle", () => {
 
 class StubClient implements DocsClient {
   lastFolderId?: string;
+  createCalls = 0;
   createDocument(_title: string, folderId?: string): Promise<{ documentId: string }> {
+    this.createCalls++;
     this.lastFolderId = folderId;
     return Promise.resolve({ documentId: "doc-x" });
   }
@@ -77,6 +79,54 @@ describe("convertFile", () => {
     const client = new StubClient();
     await convertFile(path, {}, client);
     expect(client.lastFolderId).toBeUndefined();
+  });
+
+  test("with --links, a relative cross-doc link is inserted as a live Doc link", async () => {
+    const stamp = `${Date.now()}`;
+    const dir = `${tmpdir()}/md2gd-links-${stamp}`;
+    await Bun.write(
+      `${dir}/docs-map.json`,
+      JSON.stringify({ "docs/schema.md": "https://docs.google.com/document/d/SCHEMA" }),
+    );
+    const src = `${dir}/docs/architecture.md`;
+    await Bun.write(src, "# Arch\n\nSee the [schema](schema.md).\n");
+
+    // Capture the requests the linked run produces, so the live link is observable.
+    class Recorder extends StubClient {
+      requests: DocRequest[] = [];
+      override batchUpdate(_id: string, requests: DocRequest[]): Promise<void> {
+        this.requests.push(...requests);
+        return Promise.resolve();
+      }
+    }
+    const client = new Recorder();
+    let stats: { rewritten: number } | undefined;
+    await convertFile(src, { links: `${dir}/docs-map.json`, onLinks: (s) => (stats = s) }, client);
+
+    expect(stats?.rewritten).toBe(1);
+    const linked = client.requests.some(
+      (r) =>
+        "updateTextStyle" in r && r.updateTextStyle.textStyle.link?.url === "https://docs.google.com/document/d/SCHEMA",
+    );
+    expect(linked).toBe(true);
+  });
+
+  test("a missing link map fails before writing anything", async () => {
+    const path = `${tmpdir()}/md2gd-badmap-${Date.now()}.md`;
+    await Bun.write(path, "# H\n\nBody.\n");
+    const client = new StubClient();
+    await expect(convertFile(path, { links: `${tmpdir()}/no-such-map-${Date.now()}.json` }, client)).rejects.toThrow(
+      /link map not found/,
+    );
+    expect(client.createCalls).toBe(0);
+  });
+
+  test("a malformed link map (not path→string) fails with an actionable message", async () => {
+    const mapPath = `${tmpdir()}/md2gd-map-bad-${Date.now()}.json`;
+    await Bun.write(mapPath, JSON.stringify({ "a.md": 5 }));
+    const path = `${tmpdir()}/md2gd-map-bad-src-${Date.now()}.md`;
+    await Bun.write(path, "# H\n\nBody.\n");
+    await expect(convertFile(path, { links: mapPath }, new StubClient())).rejects.toThrow(/path → url/);
   });
 });
 
