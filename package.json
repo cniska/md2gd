@@ -1,6 +1,6 @@
 {
   "name": "md2gd",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Convert Markdown files into professionally styled Google Docs from the command line",
   "license": "MIT",
   "author": "Christoffer Niska",
