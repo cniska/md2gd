@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 6 * * *"
 
 permissions:
   contents: read
@@ -14,6 +16,7 @@ concurrency:
 
 jobs:
   verify:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -24,8 +27,13 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run verify
 
+  # Compiling + smoke-testing the binary is a nightly job, not a per-PR gate:
+  # release.yml rebuilds and smokes all targets at tag time, so a broken binary
+  # can never ship -- the nightly just surfaces build breakage within a day
+  # instead of paying compile minutes (macOS bills ~10x) on every push and PR.
   compile:
     name: Compile (${{ matrix.target }})
+    if: github.event_name == 'schedule'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
     strategy:
