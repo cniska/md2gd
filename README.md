@@ -25,7 +25,7 @@ md2gd removes that step. One command, the same clean styling every time, and the
 
 ## Requirements
 
-- macOS or Linux
+- macOS (Apple Silicon) or Linux (x64) — Intel Macs need to build from source
 - A Google account
 
 The prebuilt binary bundles its runtime, so that's all you need to run md2gd.
