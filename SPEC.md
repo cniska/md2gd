@@ -190,7 +190,7 @@ Styling should be centralized/configurable enough that the default look can be a
 
 Automated tests are a **hard requirement**, not optional. The tool must not be considered complete without them, and they must be present and passing throughout development — not bolted on at the end.
 
-- **NF-8** — An automated test suite (`bun test`) must ship with the tool and be wired into the `verify` script (TS-6). `verify` must pass before any release.
+- **NF-8** — An automated test suite must ship with the tool and be part of the project's verification, which must pass before any release.
 - **NF-9** — The conversion layer must be **unit-tested against the Google API boundary mocked** (per NF-6), so the markdown-AST → `batchUpdate`-request mapping is verified without live network or auth. Tests assert the *requests produced*, not just that code runs.
 - **NF-10** — Every §2.5 edge case (FR-28 through FR-37) must have a dedicated test proving correct output: rich content in cells, emoji preservation, literal chars in code spans, Unicode typography survival, soft-break handling, caption-not-heading, per-table column sizing, no-overflow, bare-domain handling. These are the constructs that regress silently, so they are tested explicitly.
 - **NF-11** — The §3.1 styling pain points (ST-11 through ST-14) must be covered by tests asserting the corresponding paragraph/table style fields are emitted (paragraph space-after, space-after-blocks, cell padding, space-before-headings).
@@ -244,18 +244,21 @@ The tool is considered done for v1 when all of the following hold:
 
 ---
 
-## 8a. Tech stack & engineering conventions (fixed)
+## 8a. Tech stack (fixed)
 
-The stack is decided and mirrors the user's `acolyte` project — match its conventions rather than introducing new ones:
+Constraints here are limited to decisions that change what the deliverable *is* — reversing one would force a rewrite. Mechanically re-appliable choices (formatter, tsconfig, lint/verify commands, dependency preferences, gitignore) are conventions, not spec constraints; they live in `AGENTS.md`.
 
-- **TS-1** — **Runtime:** Bun. Language: TypeScript, ESM (`"type": "module"`), strict mode. Prefer Bun-native APIs (`Bun.serve`, native `fetch`, `Bun.file`) and avoid Node-only dependencies where a leaner path exists.
-- **TS-2** — **CLI entry:** a `bin` mapping `md2gd` → `src/cli.ts`, runnable directly under Bun.
-- **TS-3** — **Lint/format:** Biome (`^2.5`), matching acolyte's `biome.json` (space indent, line width 120, recommended preset). `format` = `biome format --write .`; `lint` = `biome check --error-on-warnings .`.
-- **TS-4** — **tsconfig:** align with acolyte — target ES2022, ESNext modules, Bundler resolution, `strict`, `verbatimModuleSyntax`, `types: ["bun"]` (+`node` only if needed).
-- **TS-5** — **Validation:** use `zod` for config-file and external-input validation.
-- **TS-6** — **Testing:** `bun test`. Provide a `verify` script chaining lint → typecheck (`tsc --noEmit`) → test → `bun audit`, matching acolyte.
-- **TS-7** — Dependencies stay minimal and Bun-compatible. The Google API layer may hit the REST endpoints directly with `fetch` (leaner) or use an official SDK **only if** it runs cleanly under Bun; do not pull in a heavy Node-only SDK if the REST path is straightforward.
-- **TS-8** — `.gitignore` from the first commit (per NF-7), plus a Biome config and `tsconfig.json` committed up front.
+- **TS-1** — Runtime is Bun; language is TypeScript, ESM, strict mode.
+- **TS-5** — Runtime-boundary values (config, external input) are validated with Zod before entering typed code.
+
+Relocated to `AGENTS.md`, retired here so their IDs never resolve to something new:
+
+- **TS-2** — *Retired: CLI entry point is an implementation detail.*
+- **TS-3** — *Retired: Biome and its settings are a convention (AGENTS.md).*
+- **TS-4** — *Retired: tsconfig values are a convention; `tsconfig.json` is their own source of truth.*
+- **TS-6** — *Retired: the verify command chain is a convention (AGENTS.md); the testing requirement is NF-8.*
+- **TS-7** — *Retired: dependency preference is an open decision, bounded by TS-1.*
+- **TS-8** — *Retired: gitignore duplicates NF-7; committed configs are a convention.*
 
 ## 9. Open decisions left to the building agent
 
