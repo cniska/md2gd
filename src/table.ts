@@ -77,6 +77,36 @@ function naturalWidth(cells: CellPlan[][], col: number): number {
 }
 
 /**
+ * Weight each column by its longest cell, then correct for fill-in columns. A
+ * column whose body cells are all blank is a form field waiting to be written
+ * in, not a narrow column: weighting it by its header alone hands the page to
+ * the label column and leaves nothing to write in. Its need is unknown, so it
+ * takes the average weight of the columns that do carry content — never less
+ * than its own header. A table whose body is entirely blank is a form in full:
+ * nothing distinguishes its columns but their labels, which say nothing about
+ * how much will be written under them, so they share the page equally.
+ */
+function fillInAdjustedWeights(cells: CellPlan[][], columns: number): number[] {
+  const weights = Array.from({ length: columns }, (_, col) =>
+    Math.max(1, ...cells.map((row) => row[col]?.text.length ?? 0)),
+  );
+  const body = cells.slice(1);
+  if (body.length === 0) return weights;
+
+  const filled = new Set<number>();
+  for (const row of body) {
+    for (let col = 0; col < columns; col++) {
+      if ((row[col]?.text.trim().length ?? 0) > 0) filled.add(col);
+    }
+  }
+  if (filled.size === columns) return weights;
+  if (filled.size === 0) return weights.map(() => 1);
+
+  const average = [...filled].reduce((sum, col) => sum + (weights[col] ?? 1), 0) / filled.size;
+  return weights.map((w, col) => (filled.has(col) ? w : Math.max(w, average)));
+}
+
+/**
  * Distribute the page content width across columns in proportion to each
  * column's longest cell text, but never below the width that column needs to
  * hold its widest cell on a single line. A short-content column (e.g. a status
@@ -87,9 +117,7 @@ function naturalWidth(cells: CellPlan[][], col: number): number {
 function distributeColumnWidths(cells: CellPlan[][], columns: number): Dimension[] {
   if (columns === 0) return [];
 
-  const weights = Array.from({ length: columns }, (_, col) =>
-    Math.max(1, ...cells.map((row) => row[col]?.text.length ?? 0)),
-  );
+  const weights = fillInAdjustedWeights(cells, columns);
   const floors = Array.from({ length: columns }, (_, col) => naturalWidth(cells, col));
 
   // If the columns' natural floors already exceed the page, we can't grant every

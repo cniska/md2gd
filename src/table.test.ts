@@ -74,6 +74,19 @@ describe("buildTablePlan", () => {
     expect(widths.reduce((s, w) => s + w, 0)).toBeLessThanOrEqual(468);
   });
 
+  test("a blank fill-in column is not starved by its label column", () => {
+    const md = ["| Detail | Answer |", "|---|---|", "| Street and number | |", "| Phone and email | |", ""].join("\n");
+    const [detail, answer] = firstTable(md).columnWidths;
+    if (!detail || !answer) throw new Error("expected two widths");
+    expect(answer.magnitude).toBeGreaterThanOrEqual(detail.magnitude);
+  });
+
+  test("a table with no content at all shares the page equally", () => {
+    const md = ["| Title | Description | Price |", "|---|---|---|", "| | | |", ""].join("\n");
+    const widths = firstTable(md).columnWidths.map((d) => d.magnitude);
+    for (const w of widths) expect(Math.abs(w - (widths[0] ?? 0))).toBeLessThanOrEqual(1);
+  });
+
   test("a longer-content column gets a wider column", () => {
     const md = ["| K | Description |", "|---|---|", "| a | this cell has much longer content than the key |", ""].join(
       "\n",
