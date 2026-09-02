@@ -64,6 +64,8 @@ The update is not atomic and comments anchored to cleared ranges orphan. Both ar
 
 A document is created directly inside its parent folder via Drive, not via the Docs API's create-then-move. A Drive file's id *is* the Docs document id, so creating the file with the folder as parent avoids the add-parent-to-a-rooted-file move, which fails under Drive's single-parent model. The parent is `--folder` if given, else md2gd's own default folder (SPEC FR-25, FR-27b). The same identity lets the title be renamed with a Drive `PATCH`.
 
+Every Drive call acting on a caller-supplied id goes through `driveUrl`, which carries `supportsAllDrives=true`. Drive treats a client that omits it as My Drive-only and reports a shared-drive folder or document as a missing file, so the flag lives in the URL builder rather than at each call site (SPEC NF-14a). The default-folder lookup deliberately stays outside it: that folder is always in md2gd's own Drive, and widening the search to all drives would let it latch onto a same-named folder in a shared drive.
+
 ## Auth
 
 `md2gd init` runs the OAuth installed-application flow once (`oauth.ts`, `init.ts`, `tokens.ts`):

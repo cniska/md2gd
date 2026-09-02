@@ -99,6 +99,30 @@ describe("GoogleDocsClient.moveDocument", () => {
   });
 });
 
+describe("shared drive reachability", () => {
+  test("creating in a given folder declares shared-drive support", async () => {
+    const { calls, fetchFn } = recorder([{ id: "d" }]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await client.createDocument("T", "shared-drive-folder");
+    expect(calls[0]?.url).toContain("supportsAllDrives=true");
+  });
+
+  test("renaming declares shared-drive support", async () => {
+    const { calls, fetchFn } = recorder([{}]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await client.renameDocument("doc9", "New name");
+    expect(calls[0]?.url).toContain("supportsAllDrives=true");
+  });
+
+  test("both calls of a move declare shared-drive support", async () => {
+    const { calls, fetchFn } = recorder([{ parents: ["old"] }, {}]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await client.moveDocument("doc9", "newFolder");
+    expect(calls).toHaveLength(2);
+    for (const call of calls) expect(call.url).toContain("supportsAllDrives=true");
+  });
+});
+
 describe("GoogleDocsClient.batchUpdate", () => {
   test("posts requests to the batchUpdate endpoint with a bearer token", async () => {
     const { calls, fetchFn } = recorder([{}]);

@@ -19,6 +19,17 @@ export function documentUrl(documentId: string): string {
   return `https://docs.google.com/document/d/${documentId}/edit`;
 }
 
+/**
+ * A Drive files URL carrying `supportsAllDrives`, which every call touching a
+ * caller-supplied id needs: without it Drive treats the client as My Drive-only
+ * and answers 404 for anything living in a shared drive.
+ */
+function driveUrl(path = "", params: Record<string, string> = {}): string {
+  const url = new URL(`${DRIVE_API}${path}`);
+  url.search = new URLSearchParams({ ...params, supportsAllDrives: "true" }).toString();
+  return url.toString();
+}
+
 /** Pull Google's human-readable reason out of an error response body. */
 async function errorMessage(res: Response): Promise<string> {
   const text = await res.text();
@@ -49,7 +60,7 @@ export class GoogleDocsClient implements DocsClient {
     // caller's `--folder` if given, else md2gd's own default folder.
     const parent = folderId ?? (await this.ensureFolder());
     try {
-      const doc = (await this.json("POST", `${DRIVE_API}?fields=id`, {
+      const doc = (await this.json("POST", driveUrl("", { fields: "id" }), {
         name: title,
         mimeType: DOC_MIME,
         parents: [parent],
@@ -75,17 +86,20 @@ export class GoogleDocsClient implements DocsClient {
 
   async renameDocument(documentId: string, name: string): Promise<void> {
     // The Docs document id is its Drive file id, so the title is renamed via Drive.
-    await this.json("PATCH", `${DRIVE_API}/${documentId}`, { name });
+    await this.json("PATCH", driveUrl(`/${documentId}`), { name });
   }
 
   async moveDocument(documentId: string, folderId: string): Promise<void> {
     // A Drive file has a single parent, so a move adds the new folder and removes
     // the current one(s). Fetch the current parents first to know what to remove.
-    const meta = (await this.json("GET", `${DRIVE_API}/${documentId}?fields=parents`)) as { parents?: string[] };
+    const meta = (await this.json("GET", driveUrl(`/${documentId}`, { fields: "parents" }))) as {
+      parents?: string[];
+    };
     const remove = (meta.parents ?? []).join(",");
-    const query = `addParents=${encodeURIComponent(folderId)}${remove ? `&removeParents=${encodeURIComponent(remove)}` : ""}`;
+    const params: Record<string, string> = { addParents: folderId };
+    if (remove) params.removeParents = remove;
     try {
-      await this.json("PATCH", `${DRIVE_API}/${documentId}?${query}`, {});
+      await this.json("PATCH", driveUrl(`/${documentId}`, params), {});
     } catch (error) {
       if (error instanceof Error && /\((?:403|404)\)/.test(error.message)) {
         throw new Error(
