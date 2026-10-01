@@ -214,18 +214,20 @@ describe("updateFile", () => {
   });
 
   test("moves the doc when --folder is given on update (relocate)", async () => {
+    const cfg = `${tmpdir()}/md2gd-relocate-${Date.now()}.json`;
     const md = `${tmpdir()}/relocate-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");
     const client = new StubClient();
-    await updateFile(md, { folder: "https://drive.google.com/drive/folders/DEST9" }, client, "doc-x");
+    await updateFile(md, { folder: "https://drive.google.com/drive/folders/DEST9" }, client, "doc-x", cfg);
     expect(client.movedTo).toBe("DEST9");
   });
 
   test("does not move when --folder is absent on update", async () => {
+    const cfg = `${tmpdir()}/md2gd-norelocate-${Date.now()}.json`;
     const md = `${tmpdir()}/norelocate-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");
     const client = new StubClient();
-    await updateFile(md, {}, client, "doc-x");
+    await updateFile(md, {}, client, "doc-x", cfg);
     expect(client.movedTo).toBeUndefined();
   });
 
