@@ -166,17 +166,19 @@ export const codeBlockParagraphStyle: ParagraphStyleSpec = spec({
 /** Monospace text style for whole code blocks (no per-run background). */
 export const codeBlockTextStyle: TextStyle = { weightedFontFamily: { fontFamily: MONO_FONT } };
 
-/** Indent of a list item's blocks after its first, per list level, aligned under the item's text. */
-export const LIST_ITEM_INDENT: Dimension = pt(36);
+/** A bullet preset's text indent per nesting level, which an item's later blocks align under. */
+const LIST_LEVEL_INDENT_PT = 36;
 
 /**
- * A block's own style with an indent set. Matches the first-line indent to the
- * start indent: Docs applies indentStart to every line after a break but
- * indentFirstLine (default 0) to the first, so a multi-line block would
- * otherwise hang its continuation lines to the right.
+ * The indent of a list item's blocks after its first, at the item's nesting
+ * depth. Removing a paragraph's bullet drops it to the margin, so md2gd sets it.
+ * The first-line indent matches the start indent: Docs applies indentStart to
+ * every line after a break but indentFirstLine (default 0) to the first, so a
+ * multi-line block would otherwise hang its continuation lines to the right.
  */
-export function indentedParagraphStyle(base: ParagraphStyleSpec, indent: Dimension): ParagraphStyleSpec {
-  return spec({ ...base.paragraphStyle, indentStart: indent, indentFirstLine: indent });
+export function listLaterBlockIndent(depth: number): ParagraphStyleSpec {
+  const indent = pt((depth + 1) * LIST_LEVEL_INDENT_PT);
+  return spec({ indentStart: indent, indentFirstLine: indent });
 }
 
 const QUOTE_ACCENT_WIDTH = pt(3);

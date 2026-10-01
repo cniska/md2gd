@@ -6,7 +6,6 @@ import {
   type Dimension,
   type DocRequest,
   fieldMask,
-  pt,
   type UpdateParagraphStyleRequest,
 } from "./docs";
 import { inlineRuns, LINE_BREAK } from "./inline";
@@ -18,10 +17,9 @@ import {
   codeBlockParagraphStyle,
   codeBlockTextStyle,
   headingParagraphStyle,
-  indentedParagraphStyle,
   LIST_AFTER_SPACE,
-  LIST_ITEM_INDENT,
   listItemParagraphStyle,
+  listLaterBlockIndent,
   normalParagraphStyle,
   type ParagraphStyleSpec,
 } from "./style";
@@ -36,11 +34,11 @@ interface Context {
   requests: DocRequest[];
   bullets: BulletSpec[];
   /**
-   * Leading nesting tabs that `createParagraphBullets` will strip. The cursor
-   * counts them (they exist while the requests run), but the stripped document
-   * is that many code units shorter, so the returned end index subtracts them.
+   * Where `createParagraphBullets` will strip leading nesting tabs, and how many.
+   * The cursor counts them (they exist while the requests run), but every index
+   * after one is that many code units smaller once the bullets are applied.
    */
-  strippedTabs: number;
+  tabStrips: { index: number; tabs: number }[];
   /** The paragraph being emitted ends its container, so it takes the container's own final newline. */
   reuseNewline: boolean;
 }
@@ -77,9 +75,10 @@ export function convertLeaves(
   startIndex: number,
   options: { afterTable?: boolean; endsContainer?: boolean } = {},
 ): { requests: DocRequest[]; endIndex: number } {
-  const ctx: Context = { requests: [], bullets: [], strippedTabs: 0, reuseNewline: false };
+  const ctx: Context = { requests: [], bullets: [], tabStrips: [], reuseNewline: false };
   let cursor = startIndex;
   let openRange: (BulletSpec & { list: number }) | undefined;
+  const laterBlocks: { startIndex: number; endIndex: number; depth: number }[] = [];
 
   for (const [i, leaf] of leaves.entries()) {
     const start = cursor;
@@ -88,17 +87,19 @@ export function convertLeaves(
     // cell is written into it rather than leaving an empty line below.
     ctx.reuseNewline = options.endsContainer === true && i === leaves.length - 1;
     cursor = appendLeaf(leaf, cursor, ctx);
+    const paragraphEnd = ctx.reuseNewline ? cursor + 1 : cursor;
 
-    // Consecutive item-starting blocks of one list share a bullet range; any other
-    // block between them ends it, so Docs restarts an ordered list's numbering there.
+    // A list's blocks share one bullet range, so Docs counts the list as one;
+    // an item's later blocks then lose their bullets below.
     const list = leaf.context.list;
-    if (list?.first && list.preset) {
+    if (list?.preset) {
       if (openRange?.list === list.id && openRange.endIndex === start) {
-        openRange.endIndex = cursor;
+        openRange.endIndex = paragraphEnd;
       } else {
-        openRange = { list: list.id, startIndex: start, endIndex: cursor, preset: list.preset };
+        openRange = { list: list.id, startIndex: start, endIndex: paragraphEnd, preset: list.preset };
         ctx.bullets.push(openRange);
       }
+      if (!list.first) laterBlocks.push({ startIndex: start, endIndex: paragraphEnd, depth: list.depth });
     } else {
       openRange = undefined;
     }
@@ -123,7 +124,23 @@ export function convertLeaves(
     });
   }
 
-  return { requests: ctx.requests, endIndex: cursor - ctx.strippedTabs };
+  // An item's later blocks are unbulleted and indented under its text only once
+  // every bullet is in place, so their ranges are in post-strip indices.
+  const stripped = (index: number): number =>
+    ctx.tabStrips.reduce((sum, strip) => (strip.index < index ? sum + strip.tabs : sum), 0);
+  for (const block of laterBlocks) {
+    const range = {
+      startIndex: block.startIndex - stripped(block.startIndex),
+      endIndex: block.endIndex - stripped(block.endIndex),
+    };
+    const indent = listLaterBlockIndent(block.depth);
+    ctx.requests.push({ deleteParagraphBullets: { range } });
+    ctx.requests.push({
+      updateParagraphStyle: { paragraphStyle: indent.paragraphStyle, fields: indent.fields, range },
+    });
+  }
+
+  return { requests: ctx.requests, endIndex: cursor - stripped(cursor) };
 }
 
 function appendLeaf(leaf: Leaf, cursor: number, ctx: Context): number {
@@ -137,8 +154,8 @@ function appendLeaf(leaf: Leaf, cursor: number, ctx: Context): number {
   let lead = "";
   if (list?.first) lead = `${tabs}${list.prefix ?? ""}`;
   else if (list && !bulleted) lead = tabs;
-  if (list?.first && bulleted) ctx.strippedTabs += list.depth;
-  const spec = paragraphStyle(node, context);
+  if (list?.first && bulleted && list.depth > 0) ctx.tabStrips.push({ index: cursor, tabs: list.depth });
+  const spec = ownStyle(node, context);
 
   switch (node.type) {
     case "heading":
@@ -161,18 +178,6 @@ function ownStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec 
       if (context.list) return listItemParagraphStyle();
       return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
   }
-}
-
-/**
- * A bulleted item's first block takes its nesting level's indent from the
- * bullet; its later blocks align under the item's text. A task list has no
- * bullets, so its blocks keep their leading tabs instead.
- */
-function paragraphStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec {
-  const own = ownStyle(node, context);
-  const list = context.list;
-  if (list?.preset === undefined || list.first) return own;
-  return indentedParagraphStyle(own, pt((list.depth + 1) * LIST_ITEM_INDENT.magnitude));
 }
 
 /**

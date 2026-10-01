@@ -58,11 +58,13 @@ The API injects an empty paragraph immediately before every inserted table. Left
 
 **Why not just delete it?** Removing the paragraph seems cleaner, but the Docs API rejects it: `deleteContentRange` over the newline immediately before a table returns `400 Invalid deletion range. Cannot delete the requested range.` (The Docs editor lets you backspace it; the API does not.) The spacer is a required workaround, not a stylistic choice — do not reintroduce a delete here; tuning its size is the only safe lever.
 
-### Lists split by other blocks
+### Lists with blocks after an item's first
 
-`createParagraphBullets` decides each paragraph's level by counting leading tabs, then strips them, which shifts every later index. Bullet requests therefore run last, in reverse document order, and the linear end index subtracts the stripped tabs. The request cannot name an existing list; per the [`CreateParagraphBulletsRequest` reference](https://developers.google.com/docs/api/reference/rest/v1/documents/request#createparagraphbulletsrequest), "if the paragraph immediately before paragraphs being updated is in a list with a matching preset, the paragraphs being updated are added to that preceding list." So when an item holds more than one block, the item-starting blocks around the extra block become separate ranges, and an ordered list restarts its numbering after it (SPEC FR-45).
+`createParagraphBullets` decides each paragraph's level by counting leading tabs, then strips them, which shifts every later index. Bullet requests therefore run last, in reverse document order, and the linear end index subtracts the stripped tabs.
 
-A bulleted paragraph takes its indent from its nesting level; an item's later blocks follow the bullets' geometry, 36pt per level, under the item's text. A table cannot be indented, so a table or quote inside a list item sits at its container's edge (SPEC FR-45). A task list has no bullets, so its blocks keep their leading tabs.
+The request cannot name an existing list; per the [`CreateParagraphBulletsRequest` reference](https://developers.google.com/docs/api/reference/rest/v1/documents/request#createparagraphbulletsrequest), "if the paragraph immediately before paragraphs being updated is in a list with a matching preset, the paragraphs being updated are added to that preceding list." So each list's blocks, an item's later blocks included, are bulleted as one range, which Docs counts as one list. The later blocks then have their bullets removed, in post-strip indices; a removed bullet leaves the paragraph in the list's count but drops it to the margin, so md2gd indents it under the item's text, 36pt per level (`listLaterBlockIndent` in `style.ts`).
+
+A table cannot be indented, so a table or quote inside a list item sits at its container's edge, and the list after it is bulleted afresh and restarts its count (SPEC FR-45). A task list has no bullets, so its blocks keep their leading tabs.
 
 ### Clear-and-rewrite update
 

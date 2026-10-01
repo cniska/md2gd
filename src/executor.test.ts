@@ -201,7 +201,8 @@ describe("executeDocument quotes", () => {
   test("a list inside a quote is bulleted inside the quote's cell", async () => {
     const client = await renderQuote("> intro\n>\n> 1. first\n> 2. second\n");
     const bullets = client.batches.flat().flatMap((r) => ("createParagraphBullets" in r ? [r] : []));
-    expect(bullets.map((b) => b.createParagraphBullets.range)).toEqual([{ startIndex: 10, endIndex: 22 }]);
+    // The last item ends at the cell's own newline (22), so its paragraph runs to 23.
+    expect(bullets.map((b) => b.createParagraphBullets.range)).toEqual([{ startIndex: 10, endIndex: 23 }]);
   });
 
   test("a quote renders identically wherever it sits: at the top level, after a list, inside a list item", async () => {

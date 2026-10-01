@@ -345,13 +345,54 @@ describe("convert blocks nested in list items", () => {
       .paragraphStyle;
   };
   const ranges = (reqs: ReturnType<typeof convert>) => bullets(reqs).map((b) => b.createParagraphBullets.range);
+  /** An item's later blocks: bullets removed, then indented, both after the list is bulleted, in final indices. */
+  const laterBlocks = (reqs: ReturnType<typeof convert>): object[] => {
+    const lastBullet = reqs.map((r) => "createParagraphBullets" in r).lastIndexOf(true);
+    return reqs.slice(lastBullet + 1).flatMap((r): object[] => {
+      if ("deleteParagraphBullets" in r) return [{ unbulleted: r.deleteParagraphBullets.range }];
+      if ("updateParagraphStyle" in r) {
+        const { range, paragraphStyle } = r.updateParagraphStyle;
+        return [
+          {
+            indented: range,
+            start: paragraphStyle.indentStart?.magnitude,
+            first: paragraphStyle.indentFirstLine?.magnitude,
+          },
+        ];
+      }
+      return [];
+    });
+  };
 
-  test("a code block inside a list item is shaded, indented under the item, and not bulleted", () => {
+  test("a code block inside a list item is shaded, indented under the item, and stays in the item's list", () => {
     const reqs = convert(parseMarkdown("- item\n\n  ```\n  code\n  ```\n"));
     expect(insertedText(reqs)).toBe("item\ncode\n");
     expect(styleAt(reqs, "code")?.shading).toBeDefined();
-    expect(styleAt(reqs, "code")?.indentStart?.magnitude).toBe(36);
-    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 6 }]);
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 11 }]);
+    expect(laterBlocks(reqs)).toEqual([
+      { unbulleted: { startIndex: 6, endIndex: 11 } },
+      { indented: { startIndex: 6, endIndex: 11 }, start: 36, first: 36 },
+    ]);
+  });
+
+  test("an ordered list keeps counting across an item's second paragraph", () => {
+    const reqs = convert(parseMarkdown("1. first\n\n   more\n2. second\n"));
+    expect(insertedText(reqs)).toBe("first\nmore\nsecond\n");
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 19 }]);
+    expect(laterBlocks(reqs)).toEqual([
+      { unbulleted: { startIndex: 7, endIndex: 12 } },
+      { indented: { startIndex: 7, endIndex: 12 }, start: 36, first: 36 },
+    ]);
+  });
+
+  test("a nested item's later block is found after the nesting tabs are stripped and indents a level deeper", () => {
+    const reqs = convert(parseMarkdown("- a\n  - b\n\n    more b\n- c\n"));
+    expect(insertedText(reqs)).toBe("a\n\tb\nmore b\nc\n");
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 15 }]);
+    expect(laterBlocks(reqs)).toEqual([
+      { unbulleted: { startIndex: 5, endIndex: 12 } },
+      { indented: { startIndex: 5, endIndex: 12 }, start: 72, first: 72 },
+    ]);
   });
 
   test("a later block of a task-list item keeps the item's column instead of shifting right", () => {
@@ -360,13 +401,11 @@ describe("convert blocks nested in list items", () => {
     expect(styleAt(reqs, "more")?.indentStart).toBeUndefined();
   });
 
-  test("a nested list after an item's second paragraph starts its own bullet range", () => {
+  test("a nested list after an item's second paragraph stays in the same list", () => {
     const reqs = convert(parseMarkdown("- a\n\n  para\n\n  - b\n- c\n"));
     expect(insertedText(reqs)).toBe("a\npara\n\tb\nc\n");
-    expect(ranges(reqs)).toEqual([
-      { startIndex: 8, endIndex: 13 },
-      { startIndex: 1, endIndex: 3 },
-    ]);
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 13 }]);
+    expect(laterBlocks(reqs)[0]).toEqual({ unbulleted: { startIndex: 3, endIndex: 8 } });
     expect(convertLeaves(leavesOf("- a\n\n  para\n\n  - b\n- c\n"), 1).endIndex).toBe(12);
   });
 
@@ -380,16 +419,6 @@ describe("convert blocks nested in list items", () => {
     const reqs = convert(parseMarkdown("1. a\n2.\n3. c\n"));
     expect(insertedText(reqs)).toBe("a\n\nc\n");
     expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 6 }]);
-  });
-
-  test("a second paragraph in a list item is indented and only the first paragraph is bulleted", () => {
-    const reqs = convert(parseMarkdown("1. first\n\n   more\n2. second\n"));
-    expect(insertedText(reqs)).toBe("first\nmore\nsecond\n");
-    expect(styleAt(reqs, "more")?.indentStart?.magnitude).toBe(36);
-    const ranges = bullets(reqs).map((b) => b.createParagraphBullets.range);
-    expect(ranges).toContainEqual({ startIndex: 1, endIndex: 7 });
-    expect(ranges).toContainEqual({ startIndex: 12, endIndex: 19 });
-    expect(ranges).toHaveLength(2);
   });
 
   test("the last block of a container takes the container's own newline instead of adding one", () => {
