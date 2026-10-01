@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { inlineRuns } from "./inline";
 import { parseMarkdown } from "./parse";
 import { buildTablePlan, columnWidths } from "./table";
 
@@ -109,8 +110,9 @@ describe("buildTablePlan", () => {
     const cell = plan.cells[1]?.[1];
     if (!cell) throw new Error("no cell");
     expect(cell.text).toBe("Rotate the sk_test_ key");
-    const bold = cell.runs.find((r) => r.style.bold);
-    const code = cell.runs.find((r) => r.style.weightedFontFamily);
+    const { runs } = inlineRuns(cell.content);
+    const bold = runs.find((r) => r.style.bold);
+    const code = runs.find((r) => r.style.weightedFontFamily);
     expect(bold).toBeDefined();
     expect(code).toBeDefined();
   });

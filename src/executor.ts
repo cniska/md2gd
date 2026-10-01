@@ -8,9 +8,8 @@ import {
   pt,
   type TableCellStyle,
 } from "./docs";
-import type { QuoteSegment, Segment } from "./plan";
+import type { Leaf, QuoteSegment, Segment } from "./plan";
 import {
-  bodyFontTextStyle,
   CELL_PADDING,
   HEADER_SHADING,
   normalParagraphStyle,
@@ -382,44 +381,18 @@ function headerShadingRequest(plan: TablePlan, tableStart: number): DocRequest {
 /**
  * Build fill requests for every cell, ordered by descending index so that
  * inserting into a later cell never shifts the index of an earlier, not-yet-
- * filled one. Within a cell, the text is inserted then its styled runs applied.
+ * filled one. A cell is a container holding one paragraph, written through the
+ * same converter as every other block.
  */
 function cellFillRequests(plan: TablePlan, cellIndices: number[][]): DocRequest[] {
-  interface Fill {
-    index: number;
-    requests: DocRequest[];
-  }
-  const fills: Fill[] = [];
-
-  for (let row = 0; row < plan.cells.length; row++) {
-    const cellRow = plan.cells[row] ?? [];
-    for (let col = 0; col < cellRow.length; col++) {
-      const cell = cellRow[col];
+  const fills = plan.cells.flatMap((cellRow, row) =>
+    cellRow.flatMap((cell, col) => {
       const index = cellIndices[row]?.[col];
-      if (!cell || index === undefined || cell.text.length === 0) continue;
-
-      const requests: DocRequest[] = [
-        { insertText: { text: cell.text, location: { index } } },
-        {
-          updateTextStyle: {
-            textStyle: bodyFontTextStyle,
-            fields: fieldMask(bodyFontTextStyle),
-            range: { startIndex: index, endIndex: index + cell.text.length },
-          },
-        },
-      ];
-      for (const run of cell.runs) {
-        requests.push({
-          updateTextStyle: {
-            textStyle: run.style,
-            fields: fieldMask(run.style),
-            range: { startIndex: index + run.start, endIndex: index + run.end },
-          },
-        });
-      }
-      fills.push({ index, requests });
-    }
-  }
+      if (index === undefined) return [];
+      const leaf: Leaf = { node: { type: "paragraph", children: cell.content }, context: { tableCell: true } };
+      return [{ index, requests: convertLeaves([leaf], index, { endsContainer: true }).requests }];
+    }),
+  );
 
   return fills.sort((a, b) => b.index - a.index).flatMap((f) => f.requests);
 }

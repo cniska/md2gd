@@ -22,6 +22,7 @@ import {
   listLaterBlockIndent,
   normalParagraphStyle,
   type ParagraphStyleSpec,
+  tableCellParagraphStyle,
 } from "./style";
 
 interface BulletSpec {
@@ -175,6 +176,7 @@ function ownStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec 
     case "code":
       return codeBlockParagraphStyle;
     default:
+      if (context.tableCell) return tableCellParagraphStyle;
       if (context.list) return listItemParagraphStyle();
       return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
   }

@@ -107,6 +107,16 @@ describe("executeDocument", () => {
     expect(indices[0]).toBe(14);
     expect(indices.at(-1)).toBe(3);
 
+    // A cell's text fills the cell's own paragraph, which carries the cell paragraph style: no spacing.
+    expect(inserts.map((r) => r.insertText.text)).toEqual(["b", "a", "H2", "H1"]);
+    const cellParagraph = styleFill.find(
+      (r) => "updateParagraphStyle" in r && r.updateParagraphStyle.range.startIndex === 3,
+    );
+    if (!cellParagraph || !("updateParagraphStyle" in cellParagraph)) throw new Error("no cell paragraph style");
+    expect(cellParagraph.updateParagraphStyle.range).toEqual({ startIndex: 3, endIndex: 6 });
+    expect(cellParagraph.updateParagraphStyle.paragraphStyle.spaceBelow?.magnitude).toBe(0);
+    expect(cellParagraph.updateParagraphStyle.paragraphStyle.spaceAbove?.magnitude).toBe(0);
+
     // The columns fill the document's own page content width, never a fixed paper size.
     const widths = styleFill.flatMap((r) =>
       "updateTableColumnProperties" in r ? [r.updateTableColumnProperties.tableColumnProperties.width.magnitude] : [],

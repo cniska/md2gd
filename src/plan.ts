@@ -9,6 +9,8 @@ import { buildTablePlan, type TablePlan } from "./table";
  */
 export interface BlockContext {
   list?: ListPlacement;
+  /** The block is a GFM table cell's content, which is inline only and sits flush in its cell. */
+  tableCell?: true;
 }
 
 export interface ListPlacement {

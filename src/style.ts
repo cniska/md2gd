@@ -75,6 +75,14 @@ export function listItemParagraphStyle(): ParagraphStyleSpec {
 /** Space below a list's final item, matching body paragraph spacing. */
 export const LIST_AFTER_SPACE: Dimension = pt(8);
 
+/** A table cell's text: no spacing of its own, since the cell's padding already sets it off. */
+export const tableCellParagraphStyle: ParagraphStyleSpec = spec({
+  namedStyleType: "NORMAL_TEXT",
+  lineSpacing: BODY_LINE_SPACING,
+  spaceAbove: pt(0),
+  spaceBelow: pt(0),
+});
+
 /**
  * A bold-only line (e.g. `**Customer journey**` above a table) is a caption, not
  * a heading. It keeps body text (out of the outline) but gets space above to

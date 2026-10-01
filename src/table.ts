@@ -1,11 +1,14 @@
-import type { Table } from "mdast";
+import type { PhrasingContent, Table } from "mdast";
 import type { Dimension } from "./docs";
 import { pt } from "./docs";
-import { type InlineContent, inlineRuns } from "./inline";
+import { inlineRuns } from "./inline";
 import { CELL_PADDING, MIN_COLUMN_WIDTH_PT } from "./style";
 
-/** The inline content of a single table cell. */
-export type CellPlan = InlineContent;
+/** A table cell's inline content, and its plain text for sizing the column. */
+export interface CellPlan {
+  content: PhrasingContent[];
+  text: string;
+}
 
 /**
  * A structured, index-free description of a table. The send layer inserts the
@@ -23,11 +26,13 @@ export interface TablePlan {
 }
 
 function emptyCell(): CellPlan {
-  return { text: "", runs: [] };
+  return { content: [], text: "" };
 }
 
 export function buildTablePlan(table: Table): TablePlan {
-  const cells: CellPlan[][] = table.children.map((row) => row.children.map((cell) => inlineRuns(cell.children)));
+  const cells: CellPlan[][] = table.children.map((row) =>
+    row.children.map((cell) => ({ content: cell.children, text: inlineRuns(cell.children).text })),
+  );
   const rows = cells.length;
   const columns = cells.reduce((max, row) => Math.max(max, row.length), 0);
 
