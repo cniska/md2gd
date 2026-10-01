@@ -142,12 +142,12 @@ describe("GoogleDocsClient.batchUpdate", () => {
 describe("GoogleDocsClient retries", () => {
   const noWait = () => Promise.resolve();
 
-  test("retries a transient server error and carries on", async () => {
+  test("retries a transient server error on a read and carries on", async () => {
     let call = 0;
     const fetchFn: FetchFn = () =>
       Promise.resolve(call++ === 0 ? new Response("busy", { status: 503 }) : new Response("{}", { status: 200 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn, sleep: noWait });
-    await client.batchUpdate("doc", []);
+    await client.getDocument("doc");
     expect(call).toBe(2);
   });
 

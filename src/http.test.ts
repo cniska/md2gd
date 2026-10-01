@@ -76,6 +76,30 @@ describe("fetchWithRetry", () => {
     expect(calls()).toBe(4);
   });
 
+  test("never retries a server error on a write, which may already have applied", async () => {
+    const { fetchFn, calls } = sequence([503, 200]);
+    const { sleep, waits } = recordSleeps();
+    expect((await fetchWithRetry(fetchFn, "u", { method: "POST" }, sleep)).status).toBe(503);
+    expect(calls()).toBe(1);
+    expect(waits).toEqual([]);
+  });
+
+  test("still retries rate limiting on a write, which Google rejects before applying", async () => {
+    const { fetchFn, calls } = sequence([429, 200]);
+    const { sleep } = recordSleeps();
+    expect((await fetchWithRetry(fetchFn, "u", { method: "POST" }, sleep)).status).toBe(200);
+    expect(calls()).toBe(2);
+  });
+
+  test("reports a dropped write at once rather than resending it", async () => {
+    const { fetchFn, calls } = sequence([new TypeError("Unable to connect"), 200]);
+    const { sleep } = recordSleeps();
+    await expect(fetchWithRetry(fetchFn, "u", { method: "POST" }, sleep)).rejects.toThrow(
+      "md2gd: cannot reach Google — check your network connection",
+    );
+    expect(calls()).toBe(1);
+  });
+
   test("recovers when the connection comes back", async () => {
     const { fetchFn } = sequence([new TypeError("Unable to connect"), 200]);
     const { sleep } = recordSleeps();
