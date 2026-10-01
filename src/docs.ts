@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * Minimal typed subset of the Google Docs API `batchUpdate` request shapes we
  * emit. Field names and structures mirror the official reference:
@@ -212,40 +214,51 @@ export type DocRequest =
   | UpdateTableCellStyleRequest
   | UpdateTableRowStyleRequest;
 
-// Minimal shape of a `documents.get` response — only what the executor reads to
-// locate a freshly inserted table's real cell indices.
-export interface DocStructuralElement {
-  startIndex?: number;
-  endIndex?: number;
-  table?: DocTable;
-}
+// Minimal shape of a `documents.get` response — only what the executor reads.
+// Every field is optional because the API omits default values (a zero margin
+// arrives without its `magnitude`), and objects stay loose so new API fields pass.
+const ResponseDimensionSchema = z.looseObject({ magnitude: z.number().optional(), unit: z.string().optional() });
 
-export interface DocTable {
-  tableRows: DocTableRow[];
-}
+export const DocStructuralElementSchema = z.looseObject({
+  startIndex: z.number().optional(),
+  endIndex: z.number().optional(),
+  get table() {
+    return DocTableSchema.optional();
+  },
+});
 
-export interface DocTableRow {
-  tableCells: DocTableCell[];
-}
+export const DocTableCellSchema = z.looseObject({
+  startIndex: z.number().optional(),
+  endIndex: z.number().optional(),
+  get content() {
+    return z.array(DocStructuralElementSchema);
+  },
+});
 
-export interface DocTableCell {
-  startIndex?: number;
-  endIndex?: number;
-  content: DocStructuralElement[];
-}
+export const DocTableSchema = z.looseObject({
+  tableRows: z.array(z.looseObject({ tableCells: z.array(DocTableCellSchema) })),
+});
 
-export interface DocumentStyle {
-  pageSize?: { width?: Dimension; height?: Dimension };
-  marginLeft?: Dimension;
-  marginRight?: Dimension;
-}
+export const DocumentStyleSchema = z.looseObject({
+  pageSize: z
+    .looseObject({ width: ResponseDimensionSchema.optional(), height: ResponseDimensionSchema.optional() })
+    .optional(),
+  marginLeft: ResponseDimensionSchema.optional(),
+  marginRight: ResponseDimensionSchema.optional(),
+});
 
-export interface DocumentResource {
-  documentId?: string;
-  title?: string;
-  documentStyle?: DocumentStyle;
-  body?: { content: DocStructuralElement[] };
-}
+export const DocumentResourceSchema = z.looseObject({
+  documentId: z.string().optional(),
+  title: z.string().optional(),
+  documentStyle: DocumentStyleSchema.optional(),
+  body: z.looseObject({ content: z.array(DocStructuralElementSchema) }).optional(),
+});
+
+export type DocStructuralElement = z.infer<typeof DocStructuralElementSchema>;
+export type DocTable = z.infer<typeof DocTableSchema>;
+export type DocTableCell = z.infer<typeof DocTableCellSchema>;
+export type DocumentStyle = z.infer<typeof DocumentStyleSchema>;
+export type DocumentResource = z.infer<typeof DocumentResourceSchema>;
 
 /** Index of the first insertable position in a freshly created document body. */
 export const BODY_START_INDEX = 1;

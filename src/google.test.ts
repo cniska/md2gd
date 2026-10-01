@@ -159,3 +159,19 @@ describe("GoogleDocsClient retries", () => {
     );
   });
 });
+
+describe("GoogleDocsClient responses", () => {
+  test("rejects a response missing what md2gd reads, with a clear message", async () => {
+    const { fetchFn } = recorder([{ files: [{ id: "folder" }] }, { name: "no id here" }]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await expect(client.createDocument("T")).rejects.toThrow(
+      "md2gd: unexpected response from Google API POST /drive/v3/files",
+    );
+  });
+
+  test("keeps fields the API adds beyond what md2gd reads", async () => {
+    const { fetchFn } = recorder([{ title: "T", revisionId: "r1", body: { content: [{ endIndex: 2 }] } }]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    expect(await client.getDocument("d")).toMatchObject({ title: "T", revisionId: "r1" });
+  });
+});
