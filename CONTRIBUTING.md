@@ -4,7 +4,7 @@ Thanks for your interest in md2gd.
 
 ## Setup
 
-- [Bun](https://bun.sh) 1.3+
+- [mise](https://mise.jdx.dev), then `mise install` for the Bun version pinned in `mise.toml`
 - `bun install`
 
 ## Workflow
