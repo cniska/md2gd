@@ -26,6 +26,7 @@
   },
   "scripts": {
     "start": "bun run src/cli.ts",
+    "render": "bun run scripts/render-doc.ts",
     "format": "bunx biome check --write .",
     "lint": "bunx biome check --error-on-warnings .",
     "typecheck": "bunx tsc --noEmit",

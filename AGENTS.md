@@ -17,6 +17,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 - Run locally: `bun run start -- <file.md>`.
 - Compile a standalone binary: `bun build --compile src/cli.ts --outfile md2gd`.
 - Verify (lint → typecheck → test → audit): `bun run verify`.
+- See a change in a real Google Doc: `bun run render -- <file.md>`; the recipe (credentials, evidence, cleanup) is `.claude/skills/md2gd-verify-doc/SKILL.md`. Run it after conversion, styling, or executor changes.
 - Cut a release: bump `version` in `package.json`, commit `chore: release vX.Y.Z`, and push a matching `vX.Y.Z` tag — `.github/workflows/release.yml` builds the binaries, writes their checksums, and publishes the GitHub release. There is no local release script.
 
 ## Code
@@ -38,7 +39,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 
 ## Testing
 
-- `bun test`. Unit tests are pure and offline: mock boundary effects (filesystem, network, Google APIs), never exercise them. Any real end-to-end check against Google is a separate, opt-in step.
+- `bun test`. Unit tests are pure and offline: mock boundary effects (filesystem, network, Google APIs), never exercise them. The real end-to-end check against Google is the opt-in `bun run render`, never part of `verify`.
 - The AST → `batchUpdate` mapping is tested by asserting the requests produced, not just that code runs.
 - Drive conversion changes test-first (red-green-refactor).
 
