@@ -286,6 +286,21 @@ describe("executeDocument quotes", () => {
     // The outer quote's contents start 8pt in, its padding, so the inner quote is that much narrower.
     expect(widths).toEqual([451.28, 443.28]);
     expect(client.getCalls).toBe(4);
+
+    // The outer cell ends with the inner quote, so the paragraph Docs keeps after it,
+    // at the inner quote's end (20), is pinned to the thin spacer.
+    const spacer = requests.find((r) => "updateParagraphStyle" in r && r.updateParagraphStyle.range.startIndex === 20);
+    expect(spacer && "updateParagraphStyle" in spacer ? spacer.updateParagraphStyle.range : undefined).toEqual({
+      startIndex: 20,
+      endIndex: 21,
+    });
+  });
+
+  test("a quote after a quote is inserted where the first one ends", async () => {
+    const client = await renderQuote("> first\n\n> second\n");
+    const inserts = client.batches.flat().flatMap((r) => ("insertTable" in r ? [r.insertTable.location.index] : []));
+    // OneCellClient places the first quote's table at 2 and ends it at 6.
+    expect(inserts).toEqual([1, 6]);
   });
 });
 
