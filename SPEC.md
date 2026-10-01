@@ -69,8 +69,8 @@ The complete command surface, enumerated once (each line's behavior is specified
 
 ```
 md2gd init [--client <client_secret.json>]                              One-time setup (browser consent)
-md2gd <file.md> [--title <t>] [--folder <url|id>] [--links <map>] [--open]  Convert into a new doc, print its URL
-md2gd <file.md> --update [<url|id>] [--title <t>] [--links <map>]           Re-render into an existing doc
+md2gd <file.md> [--title <t>] [--folder <url|id>] [--links <map>] [--open]                     Convert into a new doc, print its URL
+md2gd <file.md> --update [<url|id>] [--title <t>] [--folder <url|id>] [--links <map>] [--open]  Re-render into an existing doc
 md2gd --help | -h | help                                               Usage
 md2gd --version | -V | version                                         Version
 ```
@@ -201,7 +201,7 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 - **NF-11** — The §3.1 styling pain points (ST-11 through ST-16) must be covered by tests asserting the corresponding paragraph/table style fields are emitted (paragraph space-after, space-after-blocks, cell padding, space-before-headings, loose and tight lists, flush container edges).
 - **NF-12** — Tests must be deterministic and runnable offline (no dependency on live Google APIs or cached credentials). Any real end-to-end check against Google is a separate, opt-in step, not part of the default suite.
 - **NF-13** — The update path (§2.6) must be unit-tested against the mocked Google boundary: the body-clear requests (including the style reset and the already-empty-body case), the GET-before-destroy ordering, the rename-on-title-change, and the mapping lookup / override / stale-mapping behavior. As with NF-9, tests assert the *requests produced*, not just that code runs.
-- **NF-14** — The `--folder` option (FR-27b) must be unit-tested: extracting a folder id from a Drive folder URL and from a bare id, that a create places the doc under the given folder rather than the default (FR-25), and that `--update` ignores it. The title-cased filename fallback (FR-4) must likewise have dedicated tests.
+- **NF-14** — The `--folder` option (FR-27b) must be unit-tested: extracting a folder id from a Drive folder URL and from a bare id, that a create places the doc under the given folder rather than the default (FR-25), that `--update` moves the target doc into it before any destructive change, and that an `--update` without it leaves the doc where it is. The title-cased filename fallback (FR-4) must likewise have dedicated tests.
 - **NF-14a** — Reaching a shared drive (FR-25, FR-27b) must be unit-tested at the mocked Google boundary: every Drive request acting on a caller-supplied folder or document id — the create into a given folder, the rename, and both requests a move makes — must be asserted to declare shared-drive support. Drive answers for shared-drive content as though it did not exist when a request omits that declaration, so a request that drops it must turn the test red.
 - **NF-15** — The `--links` cross-document resolution (FR-27c) must be unit-tested against representative cases: a relative link to a mapped doc becomes the mapped Doc URL, a matched link with an anchor drops the fragment, an unmatched relative link and an in-page anchor stay plain text, keys resolve relative to the map file, and a bare id / edit URL target normalises. As with NF-9, assert the produced output (rewritten AST / requests), not just that code runs.
 

@@ -21,7 +21,7 @@ Markdown ─▶ parse ─▶ plan ─▶ convert / table ─▶ executor ─▶ 
 
 ## The testing seam
 
-`executor.ts` depends on a `DocsClient` interface (`createDocument`, `batchUpdate`, `getDocument`, `renameDocument`), not on `google.ts` directly. Unit tests inject a mock and assert the exact `batchUpdate` requests produced, with no network or auth (SPEC NF-9, NF-13). This is the boundary "mock at boundaries" refers to: everything above `DocsClient` is tested offline; only `google.ts` talks to Google.
+`executor.ts` depends on a `DocsClient` interface (`createDocument`, `batchUpdate`, `getDocument`, `renameDocument`, `moveDocument`), not on `google.ts` directly. Unit tests inject a mock and assert the exact `batchUpdate` requests produced, with no network or auth (SPEC NF-9, NF-13). This is the boundary "mock at boundaries" refers to: everything above `DocsClient` is tested offline; only `google.ts` talks to Google. Seeing what Google actually renders is the separate, opt-in `bun run render` (`scripts/render-doc.ts`), which drives the real CLI into a scratch Drive folder and saves the document, an outline, and page images.
 
 ## Hazards
 
@@ -71,9 +71,10 @@ A table cannot be indented, so a table or quote inside a list item sits at its c
 `--update` re-renders into an existing document so its URL and Drive location persist (SPEC §2.6). The executor:
 
 1. **Reads before it destroys.** It GETs the target first. A 403/404 means the id is wrong, the doc was trashed, or the user lacks access; that is translated into an actionable message rather than a raw API error (SPEC FR-39, FR-43). Only the read is guarded, so an auth or permission failure leaves the target untouched.
-2. **Clears the body** down to the single undeletable trailing newline, then resets the surviving paragraph to normal style with list markers removed, so the previous render's trailing heading or list style cannot bleed into the new content (SPEC FR-40). An already-empty body skips the delete.
-3. **Refills** using the same segment pipeline as create.
-4. **Renames** the Drive file if the derived title changed (SPEC FR-41).
+2. **Relocates, if asked.** With `--folder`, it moves the Drive file into that folder before clearing, so a bad folder fails while the body is still intact (SPEC FR-27b).
+3. **Clears the body** down to the single undeletable trailing newline, then resets the surviving paragraph to normal style with list markers removed, so the previous render's trailing heading or list style cannot bleed into the new content (SPEC FR-40). An already-empty body skips the delete.
+4. **Refills** using the same segment pipeline as create.
+5. **Renames** the Drive file if the derived title changed (SPEC FR-41).
 
 The update is not atomic and comments anchored to cleared ranges orphan. Both are accepted limitations for the single-user regenerate loop, documented rather than engineered around (SPEC FR-43).
 
@@ -90,7 +91,7 @@ Every Drive call acting on a caller-supplied id goes through `driveUrl`, which c
 - A loopback server binds `127.0.0.1` on an ephemeral port and becomes the redirect target.
 - The consent URL carries a random `state` and a PKCE S256 challenge; the callback verifies `state` before accepting the code (SPEC AU-8).
 - Denied consent and a 5-minute timeout both settle the flow cleanly instead of hanging.
-- The resulting token (including its refresh token) is cached under `~/.md2gd/` with owner-only permissions and refreshed automatically on expiry (SPEC AU-2, AU-4).
+- The resulting token (including its refresh token) is cached in the config directory (`~/.md2gd/` on macOS, `$XDG_CONFIG_HOME/md2gd` or `~/.config/md2gd` on Linux; `config.ts`) with owner-only permissions and refreshed automatically on expiry (SPEC AU-2, AU-4).
 
 The scope is `drive` (which also authorises the Docs API's create/batchUpdate, so no separate Docs scope is requested). It's a sensitive scope, chosen deliberately: the narrower `drive.file` can't reach folders the user made or docs md2gd didn't create, both of which the workflow needs (SPEC AU-3).
 

@@ -17,7 +17,7 @@ Convert a Markdown file into a professionally styled Google Doc.
 Usage:
   ${NAME} init --client <client_secret.json>                 One-time setup (browser consent)
   ${NAME} <file.md> [--title <t>] [--folder <url|id>] [--links <map>] [--open]  Convert into a new doc, print its URL
-  ${NAME} <file.md> --update [<url|id>] [--title <t>] [--links <map>]        Re-render into an existing doc
+  ${NAME} <file.md> --update [<url|id>] [--title <t>] [--folder <url|id>] [--links <map>] [--open]  Re-render into an existing doc
 
 Options:
   --title <t>          Override the document title (defaults to the H1 or filename)

@@ -86,7 +86,7 @@ Upgrading from an earlier version? The OAuth scope changed, so re-run `md2gd ini
 
 ```
 md2gd <file.md> [--title <title>] [--folder <url|id>] [--links <map.json>] [--open]
-md2gd <file.md> --update [<url|id>] [--title <title>] [--links <map.json>] [--open]
+md2gd <file.md> --update [<url|id>] [--title <title>] [--folder <url|id>] [--links <map.json>] [--open]
 ```
 
 - `--title <title>` — override the document title (defaults to the file's top `# H1`, else its title-cased filename, e.g. `service-readiness-review.md` → "Service Readiness Review").
