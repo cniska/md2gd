@@ -51,6 +51,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 ## Process
 
 - Commit and push directly to `main`; no feature branches or pull requests.
+- Clean up after yourself once work lands: delete the branches, clones, and scratch files you created.
 
 ## Docs
 
