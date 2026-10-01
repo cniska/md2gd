@@ -144,9 +144,14 @@ export class GoogleDocsClient implements DocsClient {
     const res = await fetchWithRetry(this.fetchFn, url, init, this.sleep);
     if (await isRateLimited(res)) throw new Error("md2gd: Google API rate limit reached — wait a minute and try again");
     if (!res.ok) throw new Error(`md2gd: Google API ${method} failed (${res.status}): ${await errorMessage(res)}`);
-    const parsed = schema.safeParse(await res.json());
-    if (!parsed.success)
-      throw new Error(`md2gd: unexpected response from Google API ${method} ${new URL(url).pathname}`);
+    const parsed = schema.safeParse(await res.json().catch(() => undefined));
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      const where = issue?.path.join(".") || "body";
+      throw new Error(
+        `md2gd: unexpected response from Google API ${method} ${new URL(url).pathname} (${where}: ${issue?.message})`,
+      );
+    }
     return parsed.data;
   }
 }

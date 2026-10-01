@@ -174,8 +174,14 @@ describe("GoogleDocsClient responses", () => {
     const { fetchFn } = recorder([{ files: [{ id: "folder" }] }, { name: "no id here" }]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     await expect(client.createDocument("T")).rejects.toThrow(
-      "md2gd: unexpected response from Google API POST /drive/v3/files",
+      "md2gd: unexpected response from Google API POST /drive/v3/files (id:",
     );
+  });
+
+  test("reports a body that isn't JSON as an unexpected response, not a parse crash", async () => {
+    const fetchFn: FetchFn = () => Promise.resolve(new Response("<html>oops</html>", { status: 200 }));
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await expect(client.getDocument("d")).rejects.toThrow("md2gd: unexpected response from Google API GET");
   });
 
   test("keeps fields the API adds beyond what md2gd reads", async () => {
