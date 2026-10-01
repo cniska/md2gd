@@ -53,10 +53,11 @@ export async function executeDocument(
 
 /**
  * Re-render an existing document in place ("stable URL" mode). The doc is read
- * first (so an auth/404/permission failure leaves it untouched — FR-39), its
+ * first (so an auth/404/permission failure leaves it untouched), its
  * body cleared, then the normal fill pipeline runs into the emptied doc. If the
  * desired title differs from the doc's current name, the Drive file is renamed
- * so the title tracks the H1 (FR-41). The URL and Drive location never change.
+ * so the title tracks the H1. The URL never changes; the Drive location changes
+ * only when a folder is given.
  */
 export async function updateDocument(
   client: DocsClient,
@@ -66,7 +67,7 @@ export async function updateDocument(
   folderId?: string,
 ): Promise<void> {
   // Read before any destructive call, so a missing or inaccessible target leaves
-  // it untouched (FR-39). A 403/404 means the id is wrong, the doc was trashed,
+  // it untouched. A 403/404 means the id is wrong, the doc was trashed,
   // or the user lacks access — translate it to an actionable message. Only the
   // read is wrapped; later failures surface as-is.
   let doc: DocumentResource;
@@ -140,7 +141,7 @@ async function fillContainer(
  * Requests that empty a document's body. Deletes all content except the final
  * undeletable newline, then resets the surviving paragraph to NORMAL_TEXT with
  * no bullets so the previous render's trailing heading/list style can't bleed
- * into the new content (FR-40). An already-empty body skips the delete.
+ * into the new content. An already-empty body skips the delete.
  */
 function clearBodyRequests(doc: DocumentResource): DocRequest[] {
   const requests: DocRequest[] = [];

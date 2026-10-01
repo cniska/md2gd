@@ -21,7 +21,7 @@ export const CONFIG_PATH = `${CONFIG_DIR}/config.json`;
  * OAuth scope: `drive` (full Drive access, which also authorises the Docs API's
  * create/batchUpdate). Required so the tool can place docs in folders the user
  * did not create (`--folder`) and update docs it did not itself create — the
- * narrower `drive.file` cannot reach either. See AU-3.
+ * narrower `drive.file` cannot reach either.
  */
 export const SCOPES = ["https://www.googleapis.com/auth/drive"];
 

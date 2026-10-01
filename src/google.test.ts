@@ -56,7 +56,7 @@ describe("GoogleDocsClient.createDocument", () => {
     expect(calls.at(-1)?.body).toMatchObject({ parents: ["existing"] });
   });
 
-  test("uses a given folder id directly, skipping the default-folder lookup (FR-27b)", async () => {
+  test("uses a given folder id directly, skipping the default-folder lookup", async () => {
     const { calls, fetchFn } = recorder([{ id: "docInFolder" }]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     const result = await client.createDocument("T", "chosen-folder");
@@ -66,7 +66,7 @@ describe("GoogleDocsClient.createDocument", () => {
     expect(calls[0]).toMatchObject({ method: "POST", body: { parents: ["chosen-folder"] } });
   });
 
-  test("wraps a failure creating in a given folder with an actionable message (FR-25)", async () => {
+  test("wraps a failure creating in a given folder with an actionable message", async () => {
     const fetchFn: FetchFn = () =>
       Promise.resolve(new Response(JSON.stringify({ error: { message: "File not found: x." } }), { status: 404 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn });

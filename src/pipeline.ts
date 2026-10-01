@@ -113,7 +113,7 @@ export async function updateFile(
   await updateDocument(client, documentId, title, planDocument(tree), folderId);
   // Remember this file → doc binding, so a later no-argument `--update` finds it.
   // This is what adopts a doc first targeted explicitly (`--update <url|id>`) —
-  // including one md2gd did not create — into the seamless regenerate loop (FR-42).
+  // including one md2gd did not create — into the seamless regenerate loop.
   await recordDoc(filePath, documentId, configPath);
 }
 
@@ -131,7 +131,7 @@ export function parseFolderId(input: string): string {
 
 /**
  * Resolve which document an `--update` run targets: an explicit url/id argument
- * if given, otherwise the doc previously created from this file (FR-42).
+ * if given, otherwise the doc previously created from this file.
  */
 export async function resolveUpdateTarget(
   filePath: string,

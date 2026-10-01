@@ -100,11 +100,14 @@ The scope is `drive` (which also authorises the Docs API's create/batchUpdate, s
 | Module | Responsibility |
 |--------|----------------|
 | `cli.ts` | Command dispatch, stdout/stderr, exit codes |
+| `open.ts`, `version.ts` | Browser launch for `--open`, name and version |
 | `args.ts` | Argument parsing into a pure `Command` (unit-tested without I/O) |
 | `parse.ts` | Markdown to mdast, GFM + soft-break policy |
 | `plan.ts` | Tree to a tree of leaf runs, tables and quotes, at any nesting depth |
 | `convert.ts`, `inline.ts` | Leaves to styled Docs requests |
 | `table.ts` | Table node to a `TablePlan` with column widths |
+| `links.ts` | `--links` map: relative cross-doc links rewritten to Doc URLs |
+| `docs.ts` | Docs API request and document shapes |
 | `style.ts` | Central typographic style table |
 | `executor.ts` | Create/clear/fill orchestration, two-phase tables |
 | `google.ts` | Live Docs + Drive REST client (`DocsClient`) |

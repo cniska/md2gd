@@ -311,7 +311,7 @@ describe("updateDocument", () => {
     body: { content: [{ startIndex: 1, endIndex: 30 }] },
   };
 
-  test("reads the doc before any destructive call (FR-39)", async () => {
+  test("reads the doc before any destructive call", async () => {
     const client = new MockClient([populated]);
     const segments = planDocument(parseMarkdown("# New\n\nBody.\n"));
     await updateDocument(client, "doc-x", "New", segments);
@@ -358,7 +358,7 @@ describe("updateDocument", () => {
     expect(client.renames).toHaveLength(0);
   });
 
-  test("moves the doc into the given folder, before clearing (FR-27b)", async () => {
+  test("moves the doc into the given folder, before clearing", async () => {
     const client = new MockClient([populated]);
     await updateDocument(client, "doc-x", "Old title", planDocument(parseMarkdown("Body.\n")), "folder-9");
     expect(client.moves).toEqual([{ id: "doc-x", folderId: "folder-9" }]);

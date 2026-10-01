@@ -23,7 +23,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 ## Code
 
 - No transitional architecture: land the canonical contract and single source of truth.
-- No spec IDs (`FR-`/`ST-`/`NF-`/`AU-`) in code, comments, or test names — describe behavior in plain terms; SPEC.md is the reference for why.
+- No spec IDs (`FR-`/`ST-`/`NF-`/`AU-`) in code, comments, or test names — describe behavior in plain terms; SPEC.md is the reference for why. `bun run lint` enforces it.
 - Define string unions / shared types as a Zod schema first, infer the TS type from it.
 - Flat `src/`, colocated `*.test.ts`. No re-export layers.
 - Factory naming: `create*`. Prefer direct `export const` over alias + `export { ... }`.
@@ -33,7 +33,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 ## Style
 
 - Stack: Bun + TypeScript ESM, strict; Zod at boundaries (SPEC §8a). `tsconfig.json` and `biome.json` are the source of truth for their settings — don't restate the values here.
-- Biome is the formatter and linter of record: space indent, width 120, recommended preset.
+- Biome is the formatter and linter of record.
 - Never hard-wrap Markdown — one line per paragraph, let it soft-wrap.
 - `.gitignore` covers credentials, tokens, and the built `/md2gd` binary; project config files are committed.
 

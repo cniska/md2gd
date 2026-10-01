@@ -65,7 +65,7 @@ describe("convertFile", () => {
     await expect(convertFile(path, {}, new StubClient())).rejects.toThrow(/empty/);
   });
 
-  test("passes the parsed --folder id to createDocument (FR-27b)", async () => {
+  test("passes the parsed --folder id to createDocument", async () => {
     const path = `${tmpdir()}/md2gd-folder-${Date.now()}.md`;
     await Bun.write(path, "# Hello\n\nWorld.\n");
     const client = new StubClient();
@@ -177,7 +177,7 @@ describe("resolveUpdateTarget", () => {
 });
 
 describe("updateFile", () => {
-  test("translates a 404 on the read into an actionable message (FR-43)", async () => {
+  test("translates a 404 on the read into an actionable message", async () => {
     class NotFoundClient extends StubClient {
       override getDocument(_id: string): Promise<DocumentResource> {
         return Promise.reject(new Error("md2gd: Google API GET failed (404): File not found"));
@@ -190,7 +190,7 @@ describe("updateFile", () => {
     );
   });
 
-  test("translates a 403 on the read into the same actionable message (FR-43)", async () => {
+  test("translates a 403 on the read into the same actionable message", async () => {
     class ForbiddenClient extends StubClient {
       override getDocument(_id: string): Promise<DocumentResource> {
         return Promise.reject(new Error("md2gd: Google API GET failed (403): insufficient permission"));
@@ -203,7 +203,7 @@ describe("updateFile", () => {
     );
   });
 
-  test("records the file→doc mapping so a later no-arg update finds it (FR-42)", async () => {
+  test("records the file→doc mapping so a later no-arg update finds it", async () => {
     const cfg = `${tmpdir()}/md2gd-adopt-${Date.now()}.json`;
     const md = `${tmpdir()}/adopt-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");

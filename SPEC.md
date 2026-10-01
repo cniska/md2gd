@@ -68,11 +68,11 @@ The tool must faithfully render the following, mapping each to the closest nativ
 The complete command surface, enumerated once (each line's behavior is specified by the requirements below):
 
 ```
-md2gd init [--client <client_secret.json>]                              One-time setup (browser consent)
-md2gd <file.md> [--title <t>] [--folder <url|id>] [--links <map>] [--open]                     Convert into a new doc, print its URL
+md2gd init [--client <client_secret.json>]                                                      One-time setup (browser consent)
+md2gd <file.md> [--title <t>] [--folder <url|id>] [--links <map>] [--open]                      Convert into a new doc, print its URL
 md2gd <file.md> --update [<url|id>] [--title <t>] [--folder <url|id>] [--links <map>] [--open]  Re-render into an existing doc
-md2gd --help | -h | help                                               Usage
-md2gd --version | -V | version                                         Version
+md2gd --help | -h | help                                                                        Usage
+md2gd --version | -V | version                                                                  Version
 ```
 
 - **FR-21a** — Provide an `md2gd init` command for one-time setup: it accepts the user's downloaded OAuth **Desktop client** secret (e.g. `md2gd init --client client_secret.json`), stores it, and runs the consent flow once (AU-1), caching the token. After `init`, all conversion is pure command-line. Rationale: Google does not permit plain API keys for Drive/Docs writes, so a per-user OAuth token is required; `init` makes acquiring it a single explicit step rather than a hidden first-run side effect.

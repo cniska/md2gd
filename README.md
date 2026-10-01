@@ -40,7 +40,7 @@ The prebuilt binary bundles its runtime, so that's all you need to run md2gd.
 curl -fsSL https://raw.githubusercontent.com/cniska/md2gd/main/scripts/install.sh | sh
 ```
 
-Downloads the latest release binary for your platform into `~/.local/bin` and verifies its checksum — no Bun required. (Available once a release is published.)
+Downloads the latest release binary for your platform into `~/.local/bin` and verifies its checksum — no Bun required.
 
 To update, re-run the same command — it always fetches the latest release.
 

@@ -6,7 +6,7 @@ import { CONFIG_PATH } from "./config";
 
 /**
  * The persisted config. Only `docs` — a canonical-path → document-id map used
- * for `--update` without an explicit target — is managed here; `passthrough`
+ * for `--update` without an explicit target — is managed here; a loose object
  * preserves any other keys future config may add, so writing never clobbers them.
  */
 export const ConfigSchema = z.looseObject({
