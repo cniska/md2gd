@@ -184,6 +184,59 @@ describe("GoogleDocsClient responses", () => {
     await expect(client.getDocument("d")).rejects.toThrow("md2gd: unexpected response from Google API GET");
   });
 
+  test("accepts a real-shaped document, whose default values the API leaves out", async () => {
+    const cell = (start: number, text: string) => ({
+      startIndex: start,
+      endIndex: start + text.length + 2,
+      content: [
+        {
+          startIndex: start + 1,
+          endIndex: start + text.length + 2,
+          paragraph: { elements: [{ startIndex: start + 1, textRun: { content: `${text}\n`, textStyle: {} } }] },
+        },
+      ],
+      tableCellStyle: { rowSpan: 1, columnSpan: 1, contentAlignment: "TOP" },
+    });
+    const document = {
+      title: "Report",
+      documentId: "d",
+      revisionId: "r",
+      documentStyle: {
+        pageSize: { width: { magnitude: 612, unit: "PT" }, height: { magnitude: 792, unit: "PT" } },
+        marginLeft: { magnitude: 72, unit: "PT" },
+        marginRight: { unit: "PT" },
+        marginTop: { magnitude: 72, unit: "PT" },
+      },
+      body: {
+        content: [
+          { endIndex: 1, sectionBreak: { sectionStyle: { columnSeparatorStyle: "NONE" } } },
+          {
+            startIndex: 1,
+            endIndex: 2,
+            paragraph: { elements: [{ startIndex: 1, endIndex: 2, textRun: { content: "\n", textStyle: {} } }] },
+          },
+          {
+            startIndex: 2,
+            endIndex: 14,
+            table: {
+              rows: 1,
+              columns: 2,
+              tableRows: [{ startIndex: 3, endIndex: 13, tableCells: [cell(4, "A"), cell(8, "")] }],
+              tableStyle: { tableColumnProperties: [{ widthType: "EVENLY_DISTRIBUTED" }] },
+            },
+          },
+        ],
+      },
+      headers: { h1: { headerId: "h1", content: [] } },
+    };
+    const { fetchFn } = recorder([document]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    const doc = await client.getDocument("d");
+    expect(doc.documentStyle?.marginRight?.magnitude).toBeUndefined();
+    expect(doc.body?.content[0]?.startIndex).toBeUndefined();
+    expect(doc.body?.content[2]?.table?.tableRows[0]?.tableCells[1]?.content[0]?.startIndex).toBe(9);
+  });
+
   test("keeps fields the API adds beyond what md2gd reads", async () => {
     const { fetchFn } = recorder([{ title: "T", revisionId: "r1", body: { content: [{ endIndex: 2 }] } }]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
