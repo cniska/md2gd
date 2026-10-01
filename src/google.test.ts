@@ -151,6 +151,15 @@ describe("GoogleDocsClient retries", () => {
     expect(call).toBe(2);
   });
 
+  test("reports Drive's lasting 403 rate limiting as rate limiting, not a permission problem", async () => {
+    const body = JSON.stringify({ error: { message: "Rate limit", errors: [{ reason: "rateLimitExceeded" }] } });
+    const fetchFn: FetchFn = () => Promise.resolve(new Response(body, { status: 403 }));
+    const client = new GoogleDocsClient({ getToken: token, fetchFn, sleep: noWait });
+    await expect(client.createDocument("T", "folder-1")).rejects.toThrow(
+      "md2gd: Google API rate limit reached — wait a minute and try again",
+    );
+  });
+
   test("reports lasting rate limiting as a clear message, not a raw API error", async () => {
     const fetchFn: FetchFn = () => Promise.resolve(new Response("{}", { status: 429 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn, sleep: noWait });

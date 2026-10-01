@@ -2,7 +2,7 @@ import { z } from "zod";
 import { DEFAULT_FOLDER_NAME } from "./config";
 import { type DocRequest, type DocumentResource, DocumentResourceSchema } from "./docs";
 import type { DocsClient } from "./executor";
-import { type FetchFn, fetchWithRetry, type Sleep } from "./http";
+import { type FetchFn, fetchWithRetry, isRateLimited, type Sleep } from "./http";
 
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
@@ -142,7 +142,7 @@ export class GoogleDocsClient implements DocsClient {
     if (body !== undefined) init.body = JSON.stringify(body);
 
     const res = await fetchWithRetry(this.fetchFn, url, init, this.sleep);
-    if (res.status === 429) throw new Error("md2gd: Google API rate limit reached — wait a minute and try again");
+    if (await isRateLimited(res)) throw new Error("md2gd: Google API rate limit reached — wait a minute and try again");
     if (!res.ok) throw new Error(`md2gd: Google API ${method} failed (${res.status}): ${await errorMessage(res)}`);
     const parsed = schema.safeParse(await res.json());
     if (!parsed.success)

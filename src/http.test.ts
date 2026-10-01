@@ -100,6 +100,23 @@ describe("fetchWithRetry", () => {
     expect(calls()).toBe(1);
   });
 
+  test("retries Drive's rate limiting, which arrives as a 403 with a rate-limit reason", async () => {
+    const limited = () =>
+      new Response(JSON.stringify({ error: { errors: [{ reason: "userRateLimitExceeded" }] } }), { status: 403 });
+    const { fetchFn, calls } = sequence([limited(), 200]);
+    const { sleep } = recordSleeps();
+    expect((await fetchWithRetry(fetchFn, "u", { method: "POST" }, sleep)).status).toBe(200);
+    expect(calls()).toBe(2);
+  });
+
+  test("returns a permission 403 at once", async () => {
+    const denied = new Response(JSON.stringify({ error: { errors: [{ reason: "forbidden" }] } }), { status: 403 });
+    const { fetchFn, calls } = sequence([denied, 200]);
+    const { sleep } = recordSleeps();
+    expect((await fetchWithRetry(fetchFn, "u", {}, sleep)).status).toBe(403);
+    expect(calls()).toBe(1);
+  });
+
   test("recovers when the connection comes back", async () => {
     const { fetchFn } = sequence([new TypeError("Unable to connect"), 200]);
     const { sleep } = recordSleeps();
