@@ -11,7 +11,7 @@ md2gd ~/notes/report.md
 # → https://docs.google.com/document/d/…/edit
 ```
 
-One command turns a Markdown file into a cleanly styled Google Doc in your Drive — proper heading hierarchy, readable spacing, styled tables with padded cells and a shaded header row, monospace code, and working links. The document never leaves your own Google account.
+One command turns a Markdown file into a cleanly styled Google Doc in your Drive — proper heading hierarchy, readable spacing, styled tables with padded cells and a bold shaded header row, monospace code, and working links. The document never leaves your own Google account.
 
 ![The bundled examples/sample.md rendered as a Google Doc by md2gd](docs/assets/sample.png)
 
@@ -150,7 +150,7 @@ A plain run (no `--update`) never overwrites: if a doc already exists for the fi
 
 ## What it renders
 
-Headings, **bold**/*italic*/~~strikethrough~~, `inline code` and fenced code blocks, links, ordered/unordered/nested and task lists, blockquotes holding any other block, and tables (with sized columns, padded cells, and a shaded header row). Emoji and non-ASCII text are preserved. Horizontal rules (`---`) are intentionally ignored — heading spacing already separates sections.
+Headings, **bold**/*italic*/~~strikethrough~~, `inline code` and fenced code blocks, links, ordered/unordered/nested and task lists, blockquotes holding any other block, and tables (with sized columns, padded cells, a bold shaded header row, and column alignment). Emoji and non-ASCII text are preserved. Horizontal rules (`---`) are intentionally ignored — heading spacing already separates sections.
 
 Not yet supported (they degrade to readable text): images (rendered as their alt text), footnotes, and per-level markers for mixed-type nested lists.
 
