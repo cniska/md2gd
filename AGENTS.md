@@ -48,9 +48,9 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 - `type(scope): description` — types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`. Single-line subject, no body, under 72 characters, ASCII only. No issue references or spec IDs in the subject.
 - Commit only when explicitly requested.
 
-## Pull requests
+## Process
 
-- Merge gate: `bun run verify` green and the change covered by tests. Describe what changed and why.
+- Commit and push directly to `main`; no feature branches or pull requests.
 
 ## Docs
 
