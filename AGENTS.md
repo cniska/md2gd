@@ -32,27 +32,25 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 
 ## Style
 
-- Stack: Bun + TypeScript ESM, strict; Zod at boundaries (SPEC §8a). `tsconfig.json` and `biome.json` are the source of truth for their settings — don't restate the values here.
-- Biome is the formatter and linter of record.
+- Biome is the formatter and linter of record; `tsconfig.json` and `biome.json` own their settings — don't restate them here.
 - Never hard-wrap Markdown — one line per paragraph, let it soft-wrap.
-- `.gitignore` covers credentials, tokens, and the built `/md2gd` binary; project config files are committed.
+- Credentials, tokens, build output, and render evidence stay out of git (`.gitignore`); project config files are committed.
 
 ## Testing
 
-- `bun test`. Unit tests are pure and offline: mock boundary effects (filesystem, network, Google APIs), never exercise them. The real end-to-end check against Google is the opt-in `bun run render`, never part of `verify`.
+- `bun test`. Unit tests are pure and offline: mock boundary effects (filesystem, network, Google APIs), never exercise them. The live Google check (`bun run render`) stays out of `verify`.
 - The AST → `batchUpdate` mapping is tested by asserting the requests produced, not just that code runs.
 - Drive conversion changes test-first (red-green-refactor).
 
 ## Commits
 
 - `type(scope): description` — types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`. Single-line subject, no body, under 72 characters, ASCII only. No issue references or spec IDs in the subject.
-- Commit only when explicitly requested.
 
 ## Process
 
-- Commit and push directly to `main`; no feature branches or pull requests.
+- Commit only when explicitly requested, and push directly to `main`; no feature branches or pull requests.
 - Clean up after yourself once work lands: delete the branches, clones, and scratch files you created.
 
 ## Docs
 
-- `docs/architecture.md` is the non-normative how; update it when conversion or executor behavior changes.
+- `docs/architecture.md` is the non-normative how; update it when conversion, executor, or Google client behavior changes.
