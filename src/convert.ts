@@ -14,19 +14,16 @@ import { type BlockContext, type Leaf, planDocument } from "./plan";
 import {
   AFTER_TABLE_SPACE,
   bodyFontTextStyle,
-  type ContainerOverlay,
   captionParagraphStyle,
   codeBlockParagraphStyle,
   codeBlockTextStyle,
-  composeParagraphStyle,
   headingParagraphStyle,
+  indentedParagraphStyle,
   LIST_AFTER_SPACE,
   LIST_ITEM_INDENT,
   listItemParagraphStyle,
   normalParagraphStyle,
   type ParagraphStyleSpec,
-  QUOTE_INDENT,
-  quoteParagraphStyle,
 } from "./style";
 
 interface BulletSpec {
@@ -44,20 +41,22 @@ interface Context {
    * is that many code units shorter, so the returned end index subtracts them.
    */
   strippedTabs: number;
+  /** The paragraph being emitted ends its container, so it takes the container's own final newline. */
+  reuseNewline: boolean;
 }
 
 /**
  * Convert a whole mdast tree into Google Docs `batchUpdate` requests, starting
- * at the body's first index. Assumes no tables (see `planDocument`); a table
- * reaching here fails loud.
+ * at the body's first index. Assumes no tables or quotes (see `planDocument`);
+ * one reaching here fails loud.
  */
 export function convert(root: Root): DocRequest[] {
   const leaves = planDocument(root).flatMap((segment) => {
-    // Tables cannot be emitted as absolute-indexed requests: their cell indices
-    // only exist after the empty table is inserted and read back, which only the
-    // executor can do. Fail loud rather than flatten one to garbage text.
-    if (segment.kind === "table") {
-      throw new Error("md2gd: tables are resolved by the document planner, not the linear converter");
+    // Tables and quotes cannot be emitted as absolute-indexed requests: their cell
+    // indices only exist after the empty table is inserted and read back, which
+    // only the executor can do. Fail loud rather than flatten one to garbage text.
+    if (segment.kind !== "linear") {
+      throw new Error("md2gd: tables and quotes are resolved by the document planner, not the linear converter");
     }
     return segment.leaves;
   });
@@ -76,15 +75,18 @@ export function convert(root: Root): DocRequest[] {
 export function convertLeaves(
   leaves: Leaf[],
   startIndex: number,
-  options: { afterTable?: boolean } = {},
+  options: { afterTable?: boolean; endsContainer?: boolean } = {},
 ): { requests: DocRequest[]; endIndex: number } {
-  const ctx: Context = { requests: [], bullets: [], strippedTabs: 0 };
+  const ctx: Context = { requests: [], bullets: [], strippedTabs: 0, reuseNewline: false };
   let cursor = startIndex;
   let openRange: (BulletSpec & { list: number }) | undefined;
 
   for (const [i, leaf] of leaves.entries()) {
     const start = cursor;
     const requestStart = ctx.requests.length;
+    // A table cell always keeps one paragraph of its own, so the last block of a
+    // cell is written into it rather than leaving an empty line below.
+    ctx.reuseNewline = options.endsContainer === true && i === leaves.length - 1;
     cursor = appendLeaf(leaf, cursor, ctx);
 
     // Consecutive item-starting blocks of one list share a bullet range; any other
@@ -136,7 +138,7 @@ function appendLeaf(leaf: Leaf, cursor: number, ctx: Context): number {
   if (list?.first) lead = `${tabs}${list.prefix ?? ""}`;
   else if (list && !bulleted) lead = tabs;
   if (list?.first && bulleted) ctx.strippedTabs += list.depth;
-  const spec = composeParagraphStyle(ownStyle(node, context), containerOverlay(context));
+  const spec = paragraphStyle(node, context);
 
   switch (node.type) {
     case "heading":
@@ -157,28 +159,20 @@ function ownStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec 
       return codeBlockParagraphStyle;
     default:
       if (context.list) return listItemParagraphStyle();
-      if (context.quoteDepth > 0) return quoteParagraphStyle;
       return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
   }
 }
 
-function containerOverlay(context: BlockContext): ContainerOverlay {
-  const quoted = context.quoteDepth > 0;
+/**
+ * A bulleted item's first block takes its nesting level's indent from the
+ * bullet; its later blocks align under the item's text. A task list has no
+ * bullets, so its blocks keep their leading tabs instead.
+ */
+function paragraphStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec {
+  const own = ownStyle(node, context);
   const list = context.list;
-  // A bulleted list's geometry is its bullets': an item's first block takes its
-  // nesting level's indent, and later blocks align under the item's text, so a
-  // quote around the list adds its accent but no indent. Quotes opened inside an
-  // item still indent within it.
-  if (list?.preset !== undefined) {
-    if (list.first) return { quoted };
-    const innerQuotes = context.quoteDepth - list.quoteBase;
-    return {
-      quoted,
-      indent: pt(innerQuotes * QUOTE_INDENT.magnitude + (list.depth + 1) * LIST_ITEM_INDENT.magnitude),
-    };
-  }
-  const indent = context.quoteDepth * QUOTE_INDENT.magnitude;
-  return { quoted, indent: indent > 0 ? pt(indent) : undefined };
+  if (list?.preset === undefined || list.first) return own;
+  return indentedParagraphStyle(own, pt((list.depth + 1) * LIST_ITEM_INDENT.magnitude));
 }
 
 /**
@@ -280,16 +274,17 @@ function emitParagraph(
   ctx: Context,
   spec: ParagraphStyleSpec,
 ): number {
-  const text = `${body}\n`;
+  const text = ctx.reuseNewline ? body : `${body}\n`;
   const start = cursor;
-  const end = cursor + text.length;
+  // The paragraph always ends at a newline: its own, or the container's it reuses.
+  const paragraphEnd = start + body.length + 1;
 
-  ctx.requests.push({ insertText: { text, location: { index: start } } });
+  if (text.length > 0) ctx.requests.push({ insertText: { text, location: { index: start } } });
   ctx.requests.push({
     updateParagraphStyle: {
       paragraphStyle: spec.paragraphStyle,
       fields: spec.fields,
-      range: { startIndex: start, endIndex: end },
+      range: { startIndex: start, endIndex: paragraphEnd },
     },
   });
   // Apply the base font over the text, then the specific runs, so run styles
@@ -305,5 +300,5 @@ function emitParagraph(
   }
   ctx.requests.push(...inlineRequests);
 
-  return end;
+  return start + text.length;
 }

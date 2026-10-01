@@ -147,12 +147,23 @@ export interface UpdateTableColumnPropertiesRequest {
   };
 }
 
+/** A cell border; a zero width hides it. Unlike a paragraph border, it has no padding of its own. */
+export interface TableCellBorder {
+  color: OptionalColor;
+  width: Dimension;
+  dashStyle: DashStyle;
+}
+
 export interface TableCellStyle {
   paddingTop?: Dimension;
   paddingBottom?: Dimension;
   paddingLeft?: Dimension;
   paddingRight?: Dimension;
   backgroundColor?: OptionalColor;
+  borderLeft?: TableCellBorder;
+  borderTop?: TableCellBorder;
+  borderRight?: TableCellBorder;
+  borderBottom?: TableCellBorder;
 }
 
 export interface TableCellLocation {

@@ -12,9 +12,9 @@ Markdown ─▶ parse ─▶ plan ─▶ convert / table ─▶ executor ─▶ 
 ```
 
 - **`parse.ts`** — Markdown to an mdast tree via `unified`: `remark-parse` + `remark-gfm` (tables, strikethrough, task lists, footnotes, autolinks) + `remark-breaks`. `remark-breaks` is the soft-break policy (SPEC FR-32): a single newline inside a paragraph becomes a hard line break, reproducing stacked-line intent instead of collapsing to a space.
-- **`plan.ts`** — walks the tree, through blockquotes and list items at any depth, into an ordered list of segments. Google Docs has no block container: a quote and a list item exist only as styling on each paragraph, so every non-table block becomes a leaf carrying its context — quote depth, and its list placement (outermost list, nesting depth, preset, whether it starts the item). A run of leaves is one `linear` segment; each table, wherever it sits, is its own `table` segment. This split exists because table cell indices do not exist until the table is inserted (see below), so tables cannot be converted deterministically the way linear content can.
-- **`convert.ts` / `inline.ts`** — turn leaves into Docs requests at a known cursor, resolving inline formatting (bold, italic, code, links, strikethrough) into styled text runs. Each leaf's paragraph style is its own spec composed with its context's overlay in `style.ts`: a quote adds its accent and indent, a list item's later blocks add the item's indent, and an item's first block carries the marker.
-- **`table.ts`** — builds a `TablePlan` (rows, columns, per-column fixed widths, per-cell text and styled runs) from a table node.
+- **`plan.ts`** — walks the tree into an ordered tree of segments. A list item exists in Docs only as bullets and indents on its paragraphs, so each block becomes a leaf carrying its list placement (outermost list, nesting depth, preset, whether it starts the item). A run of leaves is one `linear` segment; each table, wherever it sits, is its own `table` segment; each blockquote is a `quote` segment holding its own segments. Tables and quotes are split out because their cell indices do not exist until they are inserted (see below), so they cannot be converted deterministically the way linear content can.
+- **`convert.ts` / `inline.ts`** — turn leaves into Docs requests at a known cursor, resolving inline formatting (bold, italic, code, links, strikethrough) into styled text runs. A leaf's paragraph style is its own spec from `style.ts`; only a bulleted item's later blocks add the item's indent.
+- **`table.ts`** — builds a `TablePlan` (rows, columns, per-cell text and styled runs) from a table node, and sizes its columns to the container width it lands in.
 - **`style.ts`** — the single source of truth for every typographic value: fonts, paragraph spacing, cell padding, header shading, caption spacing. Change the look here without touching conversion logic (SPEC ST-9, NF-6).
 - **`executor.ts`** — drives the document: creates or clears it, then walks the segments emitting `batchUpdate` rounds.
 - **`google.ts`** — the live REST client for Docs and Drive. Implements the `DocsClient` interface the executor depends on.
@@ -41,7 +41,16 @@ A table's cell indices only exist after the table is in the document. So each ta
 
 Cell fills run **last cell first** (descending index order). Inserting text into a cell shifts the indices of everything after it, so filling in reverse means each insertion only moves cells that are already filled. Styling requests do not change indices, so they can be batched freely.
 
-After the fills, the table's size has changed, so the executor re-reads the document's end index to know where the next segment begins.
+After the fills, the table's size has changed, so the executor re-reads the table's own end index to know where the next segment begins. Column widths come from the same read: a document keeps the paper size of the account that created it, so the content width is the page width less its margins, never a fixed size. Docs clips a table wider than its container instead of shrinking it, so the widths must sum to that width exactly.
+
+### Quotes are one-cell tables
+
+Docs has no quote style, and a paragraph border joins the next paragraph's only when both have "the same border and indent properties" ([ParagraphStyle reference](https://developers.google.com/docs/api/reference/rest/v1/documents#ParagraphStyle)), which a bulleted item and a plain paragraph never do. A table cell is the only Docs container that holds any block, so a quote is a one-cell table with only a left accent, and its cell is filled through the same path as the body, recursively.
+
+- **Placement.** Content is only ever appended at the end of the innermost open container, so nothing before the cursor moves. A newly inserted table is the first table at any depth starting at or after the cursor; after its fill, the cursor continues from that table's own end index.
+- **Geometry.** Docs draws a cell border centered on the cell's edge without taking width, so a quote's column is its container's full width and its contents sit in by the cell's left padding alone. Every block's right edge therefore meets the page's content edge, inside a quote or not.
+- **The cell's own paragraph.** A cell always keeps one paragraph, so the quote's last block is written into it rather than adding a line. When the last block is a table or another quote, the paragraph after it cannot go, and is pinned to the same thin spacer style as the paragraph before a table (SPEC FR-45).
+- **Cost.** Every table and quote costs two reads, one to locate it and one for its end, however deeply it is nested.
 
 ### Pre-table spacer
 
@@ -53,7 +62,7 @@ The API injects an empty paragraph immediately before every inserted table. Left
 
 `createParagraphBullets` decides each paragraph's level by counting leading tabs, then strips them, which shifts every later index. Bullet requests therefore run last, in reverse document order, and the linear end index subtracts the stripped tabs. The request cannot name an existing list; per the [`CreateParagraphBulletsRequest` reference](https://developers.google.com/docs/api/reference/rest/v1/documents/request#createparagraphbulletsrequest), "if the paragraph immediately before paragraphs being updated is in a list with a matching preset, the paragraphs being updated are added to that preceding list." So when an item holds more than one block, the item-starting blocks around the extra block become separate ranges, and an ordered list restarts its numbering after it (SPEC FR-45).
 
-A bulleted paragraph takes its indent from its nesting level, so a list inside a quote keeps the quote's accent but not its indent. An item's later blocks follow the bullets' geometry — 36pt per level, under the item's text — and only quotes opened inside the item add to it. A task list has no bullets, so its blocks keep their leading tabs and the quote's indent.
+A bulleted paragraph takes its indent from its nesting level; an item's later blocks follow the bullets' geometry, 36pt per level, under the item's text. A table cannot be indented, so a table or quote inside a list item sits at its container's edge (SPEC FR-45). A task list has no bullets, so its blocks keep their leading tabs.
 
 ### Clear-and-rewrite update
 
@@ -90,7 +99,7 @@ The scope is `drive` (which also authorises the Docs API's create/batchUpdate, s
 | `cli.ts` | Command dispatch, stdout/stderr, exit codes |
 | `args.ts` | Argument parsing into a pure `Command` (unit-tested without I/O) |
 | `parse.ts` | Markdown to mdast, GFM + soft-break policy |
-| `plan.ts` | Tree to segments of leaves and tables, at any nesting depth |
+| `plan.ts` | Tree to a tree of leaf runs, tables and quotes, at any nesting depth |
 | `convert.ts`, `inline.ts` | Leaves to styled Docs requests |
 | `table.ts` | Table node to a `TablePlan` with column widths |
 | `style.ts` | Central typographic style table |

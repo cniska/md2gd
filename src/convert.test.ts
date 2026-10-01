@@ -217,17 +217,8 @@ describe("convert other block types", () => {
     expect(shaded).toBeDefined();
   });
 
-  test("a blockquote is indented with a left accent border", () => {
-    const reqs = convert(parseMarkdown("> quoted line\n"));
-    const style = paragraphStyles(reqs).find((s) => s.updateParagraphStyle.paragraphStyle.borderLeft);
-    expect(style).toBeDefined();
-    if (!style) throw new Error("no blockquote style");
-    const ps = style.updateParagraphStyle.paragraphStyle;
-    expect(ps.indentStart?.magnitude).toBeGreaterThan(0);
-    // First-line indent must match the start indent, or a multi-line quote hangs
-    // its continuation lines to the right (Docs applies indentStart after a break).
-    expect(ps.indentFirstLine?.magnitude).toBe(ps.indentStart?.magnitude);
-    expect(insertedText(reqs)).toBe("quoted line\n");
+  test("a quote reaching the linear converter fails loud, since it is a table in Docs", () => {
+    expect(() => convert(parseMarkdown("> quoted line\n"))).toThrow(/planner/);
   });
 
   test("a horizontal rule is ignored, contributing no paragraph", () => {
@@ -341,61 +332,25 @@ describe("convert typography and styling coverage", () => {
     expect(style?.spaceAbove?.magnitude).toBeGreaterThan(style?.spaceBelow?.magnitude ?? 0);
   });
 
-  test("code and blockquote blocks carry space below so following text is separated", () => {
+  test("code blocks carry space below so following text is separated", () => {
     const code = paragraphStyles(convert(parseMarkdown("```\nx\n```\n")))[0]?.updateParagraphStyle.paragraphStyle;
-    const quote = paragraphStyles(convert(parseMarkdown("> q\n")))[0]?.updateParagraphStyle.paragraphStyle;
     expect(code?.spaceBelow?.magnitude).toBeGreaterThan(0);
-    expect(quote?.spaceBelow?.magnitude).toBeGreaterThan(0);
   });
 });
 
-describe("convert blocks nested in quotes and list items", () => {
-  const requestAt = (reqs: ReturnType<typeof convert>, text: string) => {
+describe("convert blocks nested in list items", () => {
+  const styleAt = (reqs: ReturnType<typeof convert>, text: string) => {
     const start = insertedText(reqs).indexOf(text) + 1;
-    return paragraphStyles(reqs).find((s) => s.updateParagraphStyle.range.startIndex === start)?.updateParagraphStyle;
+    return paragraphStyles(reqs).find((s) => s.updateParagraphStyle.range.startIndex === start)?.updateParagraphStyle
+      .paragraphStyle;
   };
-  const styleAt = (reqs: ReturnType<typeof convert>, text: string) => requestAt(reqs, text)?.paragraphStyle;
-  const fieldsAt = (reqs: ReturnType<typeof convert>, text: string) => requestAt(reqs, text)?.fields.split(",") ?? [];
   const ranges = (reqs: ReturnType<typeof convert>) => bullets(reqs).map((b) => b.createParagraphBullets.range);
-
-  test("a list inside a quote bullets each item, and every item carries the quote border but no indent of its own", () => {
-    const reqs = convert(parseMarkdown("> intro\n>\n> 1. first\n> 2. second\n"));
-    expect(insertedText(reqs)).toBe("intro\nfirst\nsecond\n");
-    expect(ranges(reqs)).toEqual([{ startIndex: 7, endIndex: 20 }]);
-    for (const item of ["first", "second"]) {
-      expect(styleAt(reqs, item)?.borderLeft).toBeDefined();
-      expect(fieldsAt(reqs, item)).toContain("borderLeft");
-      expect(styleAt(reqs, item)?.indentStart).toBeUndefined();
-    }
-  });
-
-  test("a later block of an item in a quoted list aligns under the item's text, not the quote", () => {
-    const reqs = convert(parseMarkdown("> - a\n>\n>   more\n> - b\n"));
-    expect(styleAt(reqs, "more")?.indentStart?.magnitude).toBe(36);
-    expect(styleAt(reqs, "more")?.borderLeft).toBeDefined();
-  });
-
-  test("a nested quote indents one quote step deeper than its parent and keeps a left border", () => {
-    const reqs = convert(parseMarkdown("> outer\n>\n> > inner\n"));
-    expect(styleAt(reqs, "outer")?.indentStart?.magnitude).toBe(24);
-    expect(styleAt(reqs, "inner")?.indentStart?.magnitude).toBe(48);
-    expect(styleAt(reqs, "inner")?.indentFirstLine?.magnitude).toBe(48);
-    expect(styleAt(reqs, "inner")?.borderLeft).toBeDefined();
-  });
 
   test("a code block inside a list item is shaded, indented under the item, and not bulleted", () => {
     const reqs = convert(parseMarkdown("- item\n\n  ```\n  code\n  ```\n"));
     expect(insertedText(reqs)).toBe("item\ncode\n");
     expect(styleAt(reqs, "code")?.shading).toBeDefined();
     expect(styleAt(reqs, "code")?.indentStart?.magnitude).toBe(36);
-    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 6 }]);
-  });
-
-  test("a quote inside a list item carries the border and both indents, and is not bulleted", () => {
-    const reqs = convert(parseMarkdown("- item\n\n  > quoted\n"));
-    expect(styleAt(reqs, "quoted")?.indentStart?.magnitude).toBe(60);
-    expect(styleAt(reqs, "quoted")?.borderLeft).toBeDefined();
-    expect(fieldsAt(reqs, "quoted")).toEqual(expect.arrayContaining(["borderLeft", "indentStart", "indentFirstLine"]));
     expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 6 }]);
   });
 
@@ -437,21 +392,12 @@ describe("convert blocks nested in quotes and list items", () => {
     expect(ranges).toHaveLength(2);
   });
 
-  test("a heading inside a quote keeps its heading style and gains the border", () => {
-    const style = styleAt(convert(parseMarkdown("> ## Title\n")), "Title");
-    expect(style?.namedStyleType).toBe("HEADING_2");
-    expect(style?.borderLeft).toBeDefined();
-  });
-
-  test("a task list inside a quote keeps its glyphs and the border", () => {
-    const reqs = convert(parseMarkdown("> - [x] done\n> - [ ] open\n"));
-    expect(insertedText(reqs)).toBe("☑ done\n☐ open\n");
-    expect(bullets(reqs)).toHaveLength(0);
-    expect(styleAt(reqs, "☑ done")?.borderLeft).toBeDefined();
-  });
-
-  test("the end index after a quoted nested list discounts the stripped nesting tabs", () => {
-    expect(convertLeaves(leavesOf("> - a\n>   - b\n"), 1).endIndex).toBe(5);
+  test("the last block of a container takes the container's own newline instead of adding one", () => {
+    const { requests, endIndex } = convertLeaves(leavesOf("one\n\ntwo\n"), 4, { endsContainer: true });
+    expect(insertedText(requests)).toBe("one\ntwo");
+    const last = paragraphStyles(requests).at(-1)?.updateParagraphStyle.range;
+    expect(last).toEqual({ startIndex: 8, endIndex: 12 });
+    expect(endIndex).toBe(11);
   });
 });
 

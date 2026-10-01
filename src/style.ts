@@ -2,9 +2,10 @@ import {
   type Dimension,
   fieldMask,
   type NamedStyleType,
-  type ParagraphBorder,
   type ParagraphStyle,
   pt,
+  type TableCellBorder,
+  type TableCellStyle,
   type TextStyle,
 } from "./docs";
 
@@ -165,45 +166,38 @@ export const codeBlockParagraphStyle: ParagraphStyleSpec = spec({
 /** Monospace text style for whole code blocks (no per-run background). */
 export const codeBlockTextStyle: TextStyle = { weightedFontFamily: { fontFamily: MONO_FONT } };
 
-/** A paragraph directly in a quote; the quote's indent and accent come from `composeParagraphStyle`. */
-export const quoteParagraphStyle: ParagraphStyleSpec = spec({
-  spaceAbove: pt(6),
-  spaceBelow: pt(10),
-});
-
-/** Indent added per level of quote nesting. */
-export const QUOTE_INDENT: Dimension = pt(24);
-
 /** Indent of a list item's blocks after its first, per list level, aligned under the item's text. */
 export const LIST_ITEM_INDENT: Dimension = pt(36);
 
-const QUOTE_BORDER: ParagraphBorder = {
-  color: BORDER_GREY,
-  width: pt(3),
-  padding: pt(8),
-  dashStyle: "SOLID",
+/**
+ * A block's own style with an indent set. Matches the first-line indent to the
+ * start indent: Docs applies indentStart to every line after a break but
+ * indentFirstLine (default 0) to the first, so a multi-line block would
+ * otherwise hang its continuation lines to the right.
+ */
+export function indentedParagraphStyle(base: ParagraphStyleSpec, indent: Dimension): ParagraphStyleSpec {
+  return spec({ ...base.paragraphStyle, indentStart: indent, indentFirstLine: indent });
+}
+
+const QUOTE_ACCENT_WIDTH = pt(3);
+const QUOTE_PADDING_LEFT = pt(8);
+const NO_BORDER: TableCellBorder = { color: BORDER_GREY, width: pt(0), dashStyle: "SOLID" };
+
+/** A quote's one cell: a left accent and nothing else, so it reads as a quote, not a table. */
+export const quoteCellStyle: TableCellStyle = {
+  borderLeft: { color: BORDER_GREY, width: QUOTE_ACCENT_WIDTH, dashStyle: "SOLID" },
+  borderTop: NO_BORDER,
+  borderRight: NO_BORDER,
+  borderBottom: NO_BORDER,
+  paddingLeft: QUOTE_PADDING_LEFT,
+  paddingTop: pt(0),
+  paddingRight: pt(0),
+  paddingBottom: pt(0),
 };
 
-/** The styling a block inherits from the quotes and list items it sits in. */
-export interface ContainerOverlay {
-  indent?: Dimension;
-  quoted: boolean;
-}
-
 /**
- * Compose a block's own paragraph style with its containers' overlay. Docs has
- * one left border per paragraph, so any depth of quoting draws a single accent.
+ * How far a quote's contents sit in from its container's edge. Docs draws a cell
+ * border centered on the cell's edge without taking width, so only the padding
+ * moves the contents; the quote's column is the container's full width.
  */
-export function composeParagraphStyle(base: ParagraphStyleSpec, overlay: ContainerOverlay): ParagraphStyleSpec {
-  const extra: ParagraphStyle = {};
-  if (overlay.indent) {
-    extra.indentStart = overlay.indent;
-    // Match the first-line indent to the start indent. Docs applies indentStart to
-    // every line after a break but indentFirstLine (default 0) to the first, so a
-    // multi-line block would otherwise hang its continuation lines to the right.
-    extra.indentFirstLine = overlay.indent;
-  }
-  if (overlay.quoted) extra.borderLeft = QUOTE_BORDER;
-  if (Object.keys(extra).length === 0) return base;
-  return spec({ ...base.paragraphStyle, ...extra });
-}
+export const QUOTE_INSET_PT = QUOTE_PADDING_LEFT.magnitude;

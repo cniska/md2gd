@@ -21,9 +21,47 @@ describe("planDocument", () => {
     expect(segments.map((s) => s.kind)).toEqual(["table", "table"]);
   });
 
-  test("a table inside a quote becomes a table segment at that position", () => {
+  test("a quote becomes a container segment holding its own blocks", () => {
+    const [quote] = planDocument(parseMarkdown("> quoted\n"));
+    expect(quote?.kind).toBe("quote");
+    if (quote?.kind !== "quote") return;
+    expect(quote.segments.map((s) => s.kind)).toEqual(["linear"]);
+    const [inner] = quote.segments;
+    expect(inner?.kind === "linear" && inner.leaves[0]?.context).toEqual({});
+  });
+
+  test("a quote inside a quote nests as a quote segment within it", () => {
+    const [outer] = planDocument(parseMarkdown("> outer\n>\n> > inner\n"));
+    if (outer?.kind !== "quote") throw new Error("expected a quote");
+    expect(outer.segments.map((s) => s.kind)).toEqual(["linear", "quote"]);
+  });
+
+  test("a table inside a quote is a table segment within the quote", () => {
     const md = "> before\n>\n> | A |\n> |---|\n> | 1 |\n>\n> after\n";
-    expect(planDocument(parseMarkdown(md)).map((s) => s.kind)).toEqual(["linear", "table", "linear"]);
+    const [quote] = planDocument(parseMarkdown(md));
+    if (quote?.kind !== "quote") throw new Error("expected a quote");
+    expect(quote.segments.map((s) => s.kind)).toEqual(["linear", "table", "linear"]);
+  });
+
+  test("a quote inside a list item sits between the item's blocks, which continue after it", () => {
+    const segments = planDocument(parseMarkdown("- item\n\n  > quoted\n\n  more\n- next\n"));
+    expect(segments.map((s) => s.kind)).toEqual(["linear", "quote", "linear"]);
+    const after = segments[2];
+    if (after?.kind !== "linear") throw new Error("expected a linear run");
+    expect(after.leaves.map((l) => l.context.list?.first)).toEqual([false, true]);
+  });
+
+  test("a list item that opens with a quote keeps an empty first block to carry its marker", () => {
+    const [marker, quote] = planDocument(parseMarkdown("- > quoted\n"));
+    expect(quote?.kind).toBe("quote");
+    if (marker?.kind !== "linear") throw new Error("expected a linear run");
+    expect(marker.leaves).toHaveLength(1);
+    expect(marker.leaves[0]?.context.list?.first).toBe(true);
+  });
+
+  test("the run after a quote is flagged afterTable, since a quote is a table in Docs", () => {
+    const [, after] = planDocument(parseMarkdown("> quoted\n\nafter\n"));
+    expect(after?.kind === "linear" && after.afterTable).toBe(true);
   });
 
   test("a table inside a list item becomes a table segment between the items", () => {

@@ -3,12 +3,11 @@ import type { BulletPreset } from "./docs";
 import { buildTablePlan, type TablePlan } from "./table";
 
 /**
- * Where a block sits. Google Docs has no block container — a quote and a list
- * item exist only as styling on each paragraph — so every block carries the
- * containers it was nested in and the converter composes their styling onto it.
+ * Where a block sits within its container. A list item exists in Docs only as
+ * bullets and indents on its paragraphs, so every block carries its list
+ * placement for the converter to render.
  */
 export interface BlockContext {
-  quoteDepth: number;
   list?: ListPlacement;
 }
 
@@ -17,8 +16,6 @@ export interface ListPlacement {
   id: number;
   /** 0 for an item of the outermost list, one more per nested list. */
   depth: number;
-  /** The quote depth the outermost list sits at; quotes opened inside its items count beyond it. */
-  quoteBase: number;
   /** The outermost list's preset; undefined for a task list, whose items carry a glyph instead. */
   preset?: BulletPreset;
   /** True on an item's first block, which carries the item's marker. */
@@ -27,7 +24,7 @@ export interface ListPlacement {
   prefix?: string;
 }
 
-/** A block the converter renders as paragraphs: anything but a container or a table. */
+/** A block the converter renders as paragraphs: anything but a quote or a table. */
 export interface Leaf {
   node: RootContent;
   context: BlockContext;
@@ -37,7 +34,7 @@ export interface Leaf {
 export interface LinearSegment {
   kind: "linear";
   leaves: Leaf[];
-  /** True when this run immediately follows a table, so its first block needs space above it. */
+  /** True when this run immediately follows a table or quote, so its first block needs space above it. */
   afterTable: boolean;
 }
 
@@ -47,103 +44,118 @@ export interface TableSegment {
   table: TablePlan;
 }
 
-export type Segment = LinearSegment | TableSegment;
+/**
+ * A blockquote. Docs has no quote style, and paragraph borders join only across
+ * identical indents, so a quote is a one-cell table: the only Docs container
+ * that holds any block under one continuous accent.
+ */
+export interface QuoteSegment {
+  kind: "quote";
+  segments: Segment[];
+}
+
+export type Segment = LinearSegment | TableSegment | QuoteSegment;
 
 interface ItemState {
   prefix?: string;
   started: boolean;
 }
 
-interface WalkContext {
-  quoteDepth: number;
-  list?: { id: number; depth: number; quoteBase: number; preset?: BulletPreset; item: ItemState };
+interface ListWalk {
+  id: number;
+  depth: number;
+  preset?: BulletPreset;
+  item: ItemState;
 }
 
 /**
- * Split a document into an ordered list of segments. Quotes and list items are
- * walked at any depth into leaves that remember their containers; tables become
- * their own segments wherever they sit, because their cell indices only exist
- * after insertion. This is the boundary that lets the executor interleave
+ * Split a document into an ordered tree of segments. List items are walked at
+ * any depth into leaves that remember their list placement; tables and quotes
+ * become their own segments wherever they sit, because their cell indices only
+ * exist after insertion. This is the boundary that lets the executor interleave
  * deterministic batches with the insert-then-read-back table flow.
  */
 export function planDocument(root: Root): Segment[] {
-  const segments: Segment[] = [];
-  let leaves: Leaf[] = [];
   let nextListId = 0;
 
-  const flush = (): void => {
-    if (leaves.length > 0) {
-      const afterTable = segments[segments.length - 1]?.kind === "table";
-      segments.push({ kind: "linear", leaves, afterTable });
-      leaves = [];
-    }
-  };
+  const collect = (nodes: RootContent[]): Segment[] => {
+    const segments: Segment[] = [];
+    let leaves: Leaf[] = [];
 
-  const emit = (node: RootContent, context: WalkContext): void => {
-    const list = context.list;
-    if (!list) {
-      leaves.push({ node, context: { quoteDepth: context.quoteDepth } });
-      return;
-    }
-    const first = !list.item.started;
-    list.item.started = true;
-    const placement: ListPlacement = {
-      id: list.id,
-      depth: list.depth,
-      quoteBase: list.quoteBase,
-      preset: list.preset,
-      first,
-    };
-    if (first && list.item.prefix) placement.prefix = list.item.prefix;
-    leaves.push({ node, context: { quoteDepth: context.quoteDepth, list: placement } });
-  };
-
-  const walkList = (list: List, context: WalkContext): void => {
-    const task = isTaskList(list);
-    const parent = context.list;
-    const id = parent ? parent.id : nextListId++;
-    const depth = parent ? parent.depth + 1 : 0;
-    const quoteBase = parent ? parent.quoteBase : context.quoteDepth;
-    // The outermost list decides the preset for the whole nested range; nested
-    // lists inherit it, and a task list's range has none.
-    const preset = parent ? parent.preset : task ? undefined : bulletPreset(list);
-    for (const item of list.children) {
-      const itemContext: WalkContext = {
-        quoteDepth: context.quoteDepth,
-        list: { id, depth, quoteBase, preset, item: { prefix: itemPrefix(item, task), started: false } },
-      };
-      // An empty item still holds its place, so the items after it keep their numbers.
-      const children: RootContent[] = item.children.length > 0 ? item.children : [{ type: "paragraph", children: [] }];
-      walk(children, itemContext);
-    }
-  };
-
-  const walk = (nodes: RootContent[], context: WalkContext): void => {
-    for (const node of nodes) {
-      switch (node.type) {
-        case "table":
-          flush();
-          segments.push({ kind: "table", table: buildTablePlan(node) });
-          break;
-        case "blockquote":
-          walk(node.children, { ...context, quoteDepth: context.quoteDepth + 1 });
-          break;
-        case "list":
-          walkList(node, context);
-          break;
-        case "thematicBreak":
-          // Ignored: a bordered rule looks poor in Docs, and headings already
-          // carry space above, so a thematic break contributes nothing.
-          break;
-        default:
-          emit(node, context);
+    const flush = (): void => {
+      if (leaves.length > 0) {
+        const previous = segments[segments.length - 1]?.kind;
+        segments.push({ kind: "linear", leaves, afterTable: previous === "table" || previous === "quote" });
+        leaves = [];
       }
-    }
+    };
+
+    const emit = (node: RootContent, list: ListWalk | undefined): void => {
+      if (!list) {
+        leaves.push({ node, context: {} });
+        return;
+      }
+      const first = !list.item.started;
+      list.item.started = true;
+      const placement: ListPlacement = { id: list.id, depth: list.depth, preset: list.preset, first };
+      if (first && list.item.prefix) placement.prefix = list.item.prefix;
+      leaves.push({ node, context: { list: placement } });
+    };
+
+    const place = (segment: TableSegment | QuoteSegment, list: ListWalk | undefined): void => {
+      flush();
+      if (list) list.item.started = true;
+      segments.push(segment);
+    };
+
+    const walkList = (list: List, parent: ListWalk | undefined): void => {
+      const task = isTaskList(list);
+      const id = parent ? parent.id : nextListId++;
+      const depth = parent ? parent.depth + 1 : 0;
+      // The outermost list decides the preset for the whole nested range; nested
+      // lists inherit it, and a task list's range has none.
+      const preset = parent ? parent.preset : task ? undefined : bulletPreset(list);
+      for (const item of list.children) {
+        const walk: ListWalk = { id, depth, preset, item: { prefix: itemPrefix(item, task), started: false } };
+        // An item's marker rides on a paragraph, so an empty item, or one that
+        // opens with a table or quote, gets an empty first one to carry it.
+        const opener = item.children[0]?.type;
+        const needsMarker = opener === undefined || opener === "table" || opener === "blockquote";
+        const children: RootContent[] = needsMarker
+          ? [{ type: "paragraph", children: [] }, ...item.children]
+          : item.children;
+        visit(children, walk);
+      }
+    };
+
+    const visit = (children: RootContent[], list: ListWalk | undefined): void => {
+      for (const node of children) {
+        switch (node.type) {
+          case "table":
+            place({ kind: "table", table: buildTablePlan(node) }, list);
+            break;
+          case "blockquote":
+            place({ kind: "quote", segments: collect(node.children) }, list);
+            break;
+          case "list":
+            walkList(node, list);
+            break;
+          case "thematicBreak":
+            // Ignored: a bordered rule looks poor in Docs, and headings already
+            // carry space above, so a thematic break contributes nothing.
+            break;
+          default:
+            emit(node, list);
+        }
+      }
+    };
+
+    visit(nodes, undefined);
+    flush();
+    return segments;
   };
 
-  walk(root.children, { quoteDepth: 0 });
-  flush();
-  return segments;
+  return collect(root.children);
 }
 
 /** A GFM task list — at least one item carries a boolean checked state. */

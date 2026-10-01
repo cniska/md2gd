@@ -79,8 +79,8 @@ describe("executeDocument", () => {
         ],
       },
     };
-    const endGet: DocumentResource = { body: { content: [{ startIndex: 1, endIndex: 60 }] } };
-    const client = new MockClient([tableGet, endGet]);
+    // The second read finds the same table and continues after its end.
+    const client = new MockClient([tableGet, tableGet]);
 
     const md = "| H1 | H2 |\n|---|---|\n| a | b |\n";
     await executeDocument(client, "T", planDocument(parseMarkdown(md)));
@@ -130,8 +130,7 @@ describe("executeDocument", () => {
         ],
       },
     };
-    const endGet: DocumentResource = { body: { content: [{ startIndex: 1, endIndex: 40 }] } };
-    const client = new MockClient([tableGet, endGet]);
+    const client = new MockClient([tableGet, tableGet]);
     await executeDocument(client, "T", planDocument(parseMarkdown("| a | b |\n|---|---|\n")));
 
     const styleFill = client.batches[1] ?? [];
@@ -143,6 +142,139 @@ describe("executeDocument", () => {
       (r) => "updateTextStyle" in r && r.updateTextStyle.range.startIndex === 4 && r.updateTextStyle.textStyle.fontSize,
     );
     expect(spacerFont).toBeDefined();
+  });
+});
+
+/**
+ * Answers every read with a one-cell table placed where the last `insertTable`
+ * went: Docs puts a newline before the table, so it starts one index later, and
+ * its cell's paragraph two indices after that.
+ */
+class OneCellClient extends MockClient {
+  override getDocument(_id: string): Promise<DocumentResource> {
+    this.getCalls++;
+    const inserts = this.batches.flat().flatMap((r) => ("insertTable" in r ? [r.insertTable.location.index] : []));
+    const at = inserts.at(-1) ?? 1;
+    const cell = { startIndex: at + 2, endIndex: at + 4, content: [{ startIndex: at + 3, endIndex: at + 4 }] };
+    return Promise.resolve({
+      documentStyle: A4,
+      body: { content: [{ startIndex: at + 1, endIndex: at + 5, table: { tableRows: [{ tableCells: [cell] }] } }] },
+    });
+  }
+}
+
+async function renderQuote(markdown: string): Promise<OneCellClient> {
+  const client = new OneCellClient();
+  await executeDocument(client, "T", planDocument(parseMarkdown(markdown)));
+  return client;
+}
+
+describe("executeDocument quotes", () => {
+  test("a quote is a one-cell table with a left accent only, filled through its cell", async () => {
+    const client = await renderQuote("> quoted\n");
+    const requests = client.batches.flat();
+    expect(requests[0]).toEqual({ insertTable: { rows: 1, columns: 1, location: { index: 1 } } });
+
+    const cellStyle = requests.find((r) => "updateTableCellStyle" in r);
+    if (!cellStyle || !("updateTableCellStyle" in cellStyle)) throw new Error("no quote cell style");
+    const style = cellStyle.updateTableCellStyle.tableCellStyle;
+    expect(style.borderLeft?.width.magnitude).toBe(3);
+    expect([style.borderTop, style.borderRight, style.borderBottom].map((b) => b?.width.magnitude)).toEqual([0, 0, 0]);
+    expect(cellStyle.updateTableCellStyle.fields.split(",")).toEqual(
+      expect.arrayContaining(["borderLeft", "borderTop", "borderRight", "borderBottom", "paddingLeft"]),
+    );
+
+    // The quote's text fills the cell's own paragraph rather than adding a line below it.
+    expect(requests).toContainEqual({ insertText: { text: "quoted", location: { index: 4 } } });
+  });
+
+  test("a quote's column spans the page's content width", async () => {
+    const client = await renderQuote("> quoted\n");
+    const widths = client.batches
+      .flat()
+      .flatMap((r) =>
+        "updateTableColumnProperties" in r ? [r.updateTableColumnProperties.tableColumnProperties.width.magnitude] : [],
+      );
+    expect(widths).toEqual([451.28]);
+  });
+
+  test("a list inside a quote is bulleted inside the quote's cell", async () => {
+    const client = await renderQuote("> intro\n>\n> 1. first\n> 2. second\n");
+    const bullets = client.batches.flat().flatMap((r) => ("createParagraphBullets" in r ? [r] : []));
+    expect(bullets.map((b) => b.createParagraphBullets.range)).toEqual([{ startIndex: 10, endIndex: 22 }]);
+  });
+
+  test("a quote renders identically wherever it sits: at the top level, after a list, inside a list item", async () => {
+    const quoteRequests = async (markdown: string) => {
+      const client = await renderQuote(markdown);
+      const quote = client.batches.flat().filter((r) => "insertTable" in r || "updateTableCellStyle" in r);
+      const widths = client.batches.flat().filter((r) => "updateTableColumnProperties" in r);
+      return JSON.parse(JSON.stringify([...quote, ...widths]).replace(/"index":\d+/g, '"index":0'));
+    };
+    const topLevel = await quoteRequests("> q\n");
+    expect(await quoteRequests("- a\n\n> q\n")).toEqual(topLevel);
+    expect(await quoteRequests("- a\n\n  > q\n")).toEqual(topLevel);
+  });
+
+  test("a quote inside a quote is a narrower one-cell table within the outer cell", async () => {
+    const outerTable = (innerEnd: number): DocumentResource => ({
+      documentStyle: A4,
+      body: {
+        content: [
+          {
+            startIndex: 2,
+            endIndex: innerEnd + 2,
+            table: {
+              tableRows: [
+                {
+                  tableCells: [
+                    {
+                      startIndex: 3,
+                      endIndex: innerEnd + 1,
+                      content: [
+                        { startIndex: 4, endIndex: 10 },
+                        {
+                          startIndex: 11,
+                          endIndex: innerEnd,
+                          table: {
+                            tableRows: [{ tableCells: [{ startIndex: 12, content: [{ startIndex: 13 }] }] }],
+                          },
+                        },
+                      ],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const outerOnly: DocumentResource = {
+      documentStyle: A4,
+      body: {
+        content: [
+          {
+            startIndex: 2,
+            endIndex: 6,
+            table: { tableRows: [{ tableCells: [{ startIndex: 3, content: [{ startIndex: 4, endIndex: 5 }] }] }] },
+          },
+        ],
+      },
+    };
+    // Reads: locate outer, locate inner, end of inner, end of outer.
+    const client = new MockClient([outerOnly, outerTable(20), outerTable(20), outerTable(20)]);
+    await executeDocument(client, "T", planDocument(parseMarkdown("> outer\n>\n> > inner\n")));
+
+    const requests = client.batches.flat();
+    const inserts = requests.flatMap((r) => ("insertTable" in r ? [r.insertTable.location.index] : []));
+    expect(inserts).toEqual([1, 10]);
+    const widths = requests.flatMap((r) =>
+      "updateTableColumnProperties" in r ? [r.updateTableColumnProperties.tableColumnProperties.width.magnitude] : [],
+    );
+    // The outer quote's contents start 8pt in, its padding, so the inner quote is that much narrower.
+    expect(widths).toEqual([451.28, 443.28]);
+    expect(client.getCalls).toBe(4);
   });
 });
 

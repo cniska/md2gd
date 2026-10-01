@@ -1,6 +1,14 @@
 import { convertLeaves } from "./convert";
-import { BODY_START_INDEX, type DocRequest, type DocumentResource, fieldMask, type TableCellStyle } from "./docs";
-import type { Segment } from "./plan";
+import {
+  BODY_START_INDEX,
+  type DocRequest,
+  type DocStructuralElement,
+  type DocumentResource,
+  fieldMask,
+  pt,
+  type TableCellStyle,
+} from "./docs";
+import type { QuoteSegment, Segment } from "./plan";
 import {
   bodyFontTextStyle,
   CELL_PADDING,
@@ -8,6 +16,8 @@ import {
   normalParagraphStyle,
   preTableParagraphStyle,
   preTableTextStyle,
+  QUOTE_INSET_PT,
+  quoteCellStyle,
 } from "./style";
 import { columnWidths, type TablePlan } from "./table";
 
@@ -82,17 +92,48 @@ export async function updateDocument(
 
 /** Populate a document (create or freshly cleared) from planned segments. */
 async function fillSegments(client: DocsClient, documentId: string, segments: Segment[]): Promise<void> {
-  let cursor = BODY_START_INDEX;
+  await fillContainer(client, documentId, segments, BODY_START_INDEX, { inset: 0, isCell: false });
+}
 
-  for (const segment of segments) {
-    if (segment.kind === "linear") {
-      const { requests, endIndex } = convertLeaves(segment.leaves, cursor, { afterTable: segment.afterTable });
-      if (requests.length > 0) await client.batchUpdate(documentId, requests);
-      cursor = endIndex;
-    } else {
-      cursor = await insertTableSegment(client, documentId, segment.table, cursor);
+/** Where segments are written: the body, or a quote's cell this many points in from the page's content edge. */
+interface Container {
+  inset: number;
+  isCell: boolean;
+}
+
+/**
+ * Write segments into a container from `startIndex`, returning the index after
+ * them. Content is only ever appended at the end of the innermost open
+ * container, so nothing before the cursor moves while a container fills.
+ */
+async function fillContainer(
+  client: DocsClient,
+  documentId: string,
+  segments: Segment[],
+  startIndex: number,
+  container: Container,
+): Promise<number> {
+  let cursor = startIndex;
+  for (const [i, segment] of segments.entries()) {
+    switch (segment.kind) {
+      case "linear": {
+        const { requests, endIndex } = convertLeaves(segment.leaves, cursor, {
+          afterTable: segment.afterTable,
+          endsContainer: container.isCell && i === segments.length - 1,
+        });
+        if (requests.length > 0) await client.batchUpdate(documentId, requests);
+        cursor = endIndex;
+        break;
+      }
+      case "table":
+        cursor = await insertTableSegment(client, documentId, segment.table, cursor, container.inset);
+        break;
+      case "quote":
+        cursor = await insertQuoteSegment(client, documentId, segment, cursor, container.inset);
+        break;
     }
   }
+  return cursor;
 }
 
 /**
@@ -120,6 +161,7 @@ async function insertTableSegment(
   documentId: string,
   plan: TablePlan,
   atIndex: number,
+  inset: number,
 ): Promise<number> {
   // 1. Insert the empty table structure.
   await client.batchUpdate(documentId, [
@@ -131,7 +173,7 @@ async function insertTableSegment(
   const doc = await client.getDocument(documentId);
   const located = locateTable(doc, atIndex);
   if (!located) throw new Error("md2gd: inserted table not found in document");
-  const contentWidth = pageContentWidth(doc);
+  const contentWidth = pageContentWidth(doc) - inset;
 
   // 3. Style the table and fill cells. Styling requests don't change indices;
   //    cell fills are ordered last-cell-first so each insertion never shifts a
@@ -146,8 +188,57 @@ async function insertTableSegment(
   ];
   await client.batchUpdate(documentId, requests);
 
-  // 4. The table's size changed with the fills; read the new end to continue after it.
-  return bodyEndInsertIndex(await client.getDocument(documentId));
+  // 4. The table's size changed with the fills; read its new end to continue after it.
+  return tableEndIndex(await client.getDocument(documentId), located.startIndex);
+}
+
+/**
+ * Insert a quote as a one-cell table with only a left accent, then fill its cell
+ * with the quote's own segments through the same path as the body.
+ */
+async function insertQuoteSegment(
+  client: DocsClient,
+  documentId: string,
+  quote: QuoteSegment,
+  atIndex: number,
+  inset: number,
+): Promise<number> {
+  await client.batchUpdate(documentId, [{ insertTable: { rows: 1, columns: 1, location: { index: atIndex } } }]);
+  const doc = await client.getDocument(documentId);
+  const located = locateTable(doc, atIndex);
+  const cellStart = located?.cellIndices[0]?.[0];
+  if (!located || cellStart === undefined) throw new Error("md2gd: inserted quote not found in document");
+
+  const width = pt(pageContentWidth(doc) - inset);
+  await client.batchUpdate(documentId, [
+    ...preTableSpacerRequests(located.startIndex),
+    {
+      updateTableColumnProperties: {
+        tableStartLocation: { index: located.startIndex },
+        columnIndices: [0],
+        tableColumnProperties: { widthType: "FIXED_WIDTH", width },
+        fields: "widthType,width",
+      },
+    },
+    {
+      updateTableCellStyle: {
+        tableCellStyle: quoteCellStyle,
+        fields: fieldMask(quoteCellStyle),
+        tableStartLocation: { index: located.startIndex },
+      },
+    },
+  ]);
+
+  const end = await fillContainer(client, documentId, quote.segments, cellStart, {
+    inset: inset + QUOTE_INSET_PT,
+    isCell: true,
+  });
+  // A cell keeps a paragraph of its own after a table it ends with; pin it like
+  // the spacer before every table, so it reads as the same thin gap.
+  const last = quote.segments.at(-1);
+  if (last !== undefined && last.kind !== "linear") await client.batchUpdate(documentId, spacerRequests(end));
+
+  return tableEndIndex(await client.getDocument(documentId), located.startIndex);
 }
 
 /**
@@ -167,8 +258,36 @@ interface LocatedTable {
   cellIndices: number[][];
 }
 
+/**
+ * The first table, in document order and at any depth, that starts where `matches`
+ * says. A table that starts earlier is an ancestor or an earlier sibling, so it
+ * is searched through rather than matched.
+ */
+function findTable(
+  content: DocStructuralElement[],
+  matches: (start: number) => boolean,
+): DocStructuralElement | undefined {
+  for (const element of content) {
+    if (!element.table || element.startIndex === undefined) continue;
+    if (matches(element.startIndex)) return element;
+    for (const row of element.table.tableRows) {
+      for (const cell of row.tableCells) {
+        const found = findTable(cell.content, matches);
+        if (found) return found;
+      }
+    }
+  }
+  return undefined;
+}
+
+function tableEndIndex(doc: DocumentResource, tableStart: number): number {
+  const end = findTable(doc.body?.content ?? [], (start) => start === tableStart)?.endIndex;
+  if (end === undefined) throw new Error("md2gd: filled table not found in document");
+  return end;
+}
+
 function locateTable(doc: DocumentResource, atIndex: number): LocatedTable | undefined {
-  const element = (doc.body?.content ?? []).find((el) => el.table !== undefined && (el.startIndex ?? -1) >= atIndex);
+  const element = findTable(doc.body?.content ?? [], (start) => start >= atIndex);
   if (!element?.table || element.startIndex === undefined) return undefined;
 
   const cellIndices = element.table.tableRows.map((row) =>
@@ -190,7 +309,12 @@ function locateTable(doc: DocumentResource, atIndex: number): LocatedTable | und
 function preTableSpacerRequests(tableStart: number): DocRequest[] {
   const paragraphStart = tableStart - 1;
   if (paragraphStart < BODY_START_INDEX) return [];
-  const range = { startIndex: paragraphStart, endIndex: tableStart };
+  return spacerRequests(paragraphStart);
+}
+
+/** Style the empty paragraph at `paragraphStart` as the thin gap that sits beside every table. */
+function spacerRequests(paragraphStart: number): DocRequest[] {
+  const range = { startIndex: paragraphStart, endIndex: paragraphStart + 1 };
   return [
     {
       updateParagraphStyle: {
