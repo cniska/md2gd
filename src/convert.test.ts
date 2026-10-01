@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { convert, convertLeaves } from "./convert";
+import type { Root } from "mdast";
+import { convertLeaves } from "./convert";
 import type {
   CreateParagraphBulletsRequest,
+  DocRequest,
   InsertTextRequest,
   UpdateParagraphStyleRequest,
   UpdateTextStyleRequest,
@@ -11,6 +13,16 @@ import { type Leaf, planDocument } from "./plan";
 
 function leavesOf(markdown: string): Leaf[] {
   return planDocument(parseMarkdown(markdown)).flatMap((segment) => (segment.kind === "linear" ? segment.leaves : []));
+}
+
+/** A document of leaves only, converted from the body's first index. */
+function convert(root: Root): DocRequest[] {
+  const segments = planDocument(root);
+  if (segments.some((segment) => segment.kind !== "linear")) throw new Error("fixture holds a table or quote");
+  return convertLeaves(
+    segments.flatMap((segment) => (segment.kind === "linear" ? segment.leaves : [])),
+    1,
+  ).requests;
 }
 
 function insertedText(reqs: ReturnType<typeof convert>): string {
@@ -226,22 +238,11 @@ describe("convert other block types", () => {
     expect(shaded).toBeDefined();
   });
 
-  test("a quote reaching the linear converter fails loud, since it is a table in Docs", () => {
-    expect(() => convert(parseMarkdown("> quoted line\n"))).toThrow(/planner/);
-  });
-
   test("a horizontal rule is ignored, contributing no paragraph", () => {
     const reqs = convert(parseMarkdown("above\n\n---\n\nbelow\n"));
     expect(paragraphStyles(reqs).some((s) => s.updateParagraphStyle.paragraphStyle.borderBottom)).toBe(false);
     expect(paragraphStyles(reqs)).toHaveLength(2);
     expect(insertedText(reqs)).toBe("above\nbelow\n");
-  });
-});
-
-describe("convert deferred / unsupported blocks", () => {
-  test("a table reaching the linear converter fails loud rather than flattening", () => {
-    const tree = parseMarkdown("| A | B |\n|---|---|\n| 1 | 2 |\n");
-    expect(() => convert(tree)).toThrow(/planner/);
   });
 });
 

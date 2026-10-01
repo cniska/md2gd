@@ -1,7 +1,7 @@
+import type { Heading } from "mdast";
 import {
   type Dimension,
   fieldMask,
-  type NamedStyleType,
   type ParagraphStyle,
   pt,
   type TableCellBorder,
@@ -32,7 +32,7 @@ function spec(style: ParagraphStyle): ParagraphStyleSpec {
   return { paragraphStyle: style, fields: fieldMask(style) };
 }
 
-const NORMAL: ParagraphStyleSpec = spec({
+export const normalParagraphStyle: ParagraphStyleSpec = spec({
   namedStyleType: "NORMAL_TEXT",
   lineSpacing: BODY_LINE_SPACING,
   spaceBelow: pt(8),
@@ -43,7 +43,7 @@ interface HeadingSpacing {
   below: Dimension;
 }
 
-const HEADING_SPACING: Record<1 | 2 | 3 | 4 | 5 | 6, HeadingSpacing> = {
+const HEADING_SPACING: Record<Heading["depth"], HeadingSpacing> = {
   1: { above: pt(20), below: pt(6) },
   2: { above: pt(16), below: pt(4) },
   3: { above: pt(14), below: pt(4) },
@@ -52,25 +52,17 @@ const HEADING_SPACING: Record<1 | 2 | 3 | 4 | 5 | 6, HeadingSpacing> = {
   6: { above: pt(12), below: pt(2) },
 };
 
-export function normalParagraphStyle(): ParagraphStyleSpec {
-  return NORMAL;
-}
-
 /**
- * List items sit closer together than body paragraphs so a list reads as one
- * grouped block rather than a stack of separate paragraphs. The space *after*
- * the whole list is restored separately (LIST_AFTER_SPACE) so it doesn't butt
- * against the next block.
+ * A tight list's items sit closer together than body paragraphs so the list reads
+ * as one grouped block rather than a stack of separate paragraphs. The space
+ * *after* the whole list is restored separately (LIST_AFTER_SPACE) so it doesn't
+ * butt against the next block.
  */
-const LIST_ITEM: ParagraphStyleSpec = spec({
+export const listItemParagraphStyle: ParagraphStyleSpec = spec({
   namedStyleType: "NORMAL_TEXT",
   lineSpacing: BODY_LINE_SPACING,
   spaceBelow: pt(2),
 });
-
-export function listItemParagraphStyle(): ParagraphStyleSpec {
-  return LIST_ITEM;
-}
 
 /** Space below a list's final item, matching body paragraph spacing. */
 export const LIST_AFTER_SPACE: Dimension = pt(8);
@@ -89,29 +81,20 @@ export const tableCellParagraphStyle: ParagraphStyleSpec = spec({
  * separate it from preceding content and tight space below so it groups with the
  * element it introduces; `keepWithNext` stops a page break splitting the pair.
  */
-const CAPTION: ParagraphStyleSpec = spec({
+export const captionParagraphStyle: ParagraphStyleSpec = spec({
   namedStyleType: "NORMAL_TEXT",
   spaceAbove: pt(12),
   spaceBelow: pt(4),
   keepWithNext: true,
 });
 
-export function captionParagraphStyle(): ParagraphStyleSpec {
-  return CAPTION;
-}
-
-export function headingParagraphStyle(depth: number): ParagraphStyleSpec {
-  const level = Math.min(Math.max(depth, 1), 6) as 1 | 2 | 3 | 4 | 5 | 6;
-  const spacing = HEADING_SPACING[level];
-  return spec({
-    namedStyleType: `HEADING_${level}` as NamedStyleType,
-    spaceAbove: spacing.above,
-    spaceBelow: spacing.below,
-  });
+export function headingParagraphStyle(depth: Heading["depth"]): ParagraphStyleSpec {
+  const spacing = HEADING_SPACING[depth];
+  return spec({ namedStyleType: `HEADING_${depth}`, spaceAbove: spacing.above, spaceBelow: spacing.below });
 }
 
 /** Default body/heading font applied to all inserted text. */
-export const DEFAULT_FONT = "Montserrat";
+const DEFAULT_FONT = "Montserrat";
 
 /** Base font run applied to every paragraph and cell; specific runs override it. */
 export const bodyFontTextStyle: TextStyle = { weightedFontFamily: { fontFamily: DEFAULT_FONT } };

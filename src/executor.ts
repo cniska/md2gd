@@ -149,7 +149,7 @@ function clearBodyRequests(doc: DocumentResource): DocRequest[] {
     requests.push({ deleteContentRange: { range: { startIndex: BODY_START_INDEX, endIndex: end } } });
   }
 
-  const reset = normalParagraphStyle();
+  const reset = normalParagraphStyle;
   const range = { startIndex: BODY_START_INDEX, endIndex: BODY_START_INDEX + 1 };
   requests.push({ updateParagraphStyle: { paragraphStyle: reset.paragraphStyle, fields: reset.fields, range } });
   requests.push({ deleteParagraphBullets: { range } });

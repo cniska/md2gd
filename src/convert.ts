@@ -1,8 +1,8 @@
-import type { Code, PhrasingContent, Root, RootContent } from "mdast";
+import type { Code, PhrasingContent, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
-import { BODY_START_INDEX, type BulletPreset, type Dimension, type DocRequest, fieldMask, pt } from "./docs";
+import { type BulletPreset, type Dimension, type DocRequest, fieldMask, pt } from "./docs";
 import { inlineRuns, LINE_BREAK } from "./inline";
-import { type BlockContext, type Leaf, planDocument } from "./plan";
+import type { BlockContext, Leaf } from "./plan";
 import {
   AFTER_TABLE_SPACE,
   bodyFontTextStyle,
@@ -36,24 +36,6 @@ interface Context {
   tabStrips: { index: number; tabs: number }[];
   /** The paragraph being emitted ends its container, so it takes the container's own final newline. */
   reuseNewline: boolean;
-}
-
-/**
- * Convert a whole mdast tree into Google Docs `batchUpdate` requests, starting
- * at the body's first index. Assumes no tables or quotes (see `planDocument`);
- * one reaching here fails loud.
- */
-export function convert(root: Root): DocRequest[] {
-  const leaves = planDocument(root).flatMap((segment) => {
-    // Tables and quotes cannot be emitted as absolute-indexed requests: their cell
-    // indices only exist after the empty table is inserted and read back, which
-    // only the executor can do. Fail loud rather than flatten one to garbage text.
-    if (segment.kind !== "linear") {
-      throw new Error("md2gd: tables and quotes are resolved by the document planner, not the linear converter");
-    }
-    return segment.leaves;
-  });
-  return convertLeaves(leaves, BODY_START_INDEX).requests;
 }
 
 /**
@@ -197,8 +179,8 @@ function ownStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec 
       return codeBlockParagraphStyle;
     default:
       if (context.tableCell) return tableCellParagraphStyle;
-      if (context.list) return context.list.loose ? normalParagraphStyle() : listItemParagraphStyle();
-      return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
+      if (context.list) return context.list.loose ? normalParagraphStyle : listItemParagraphStyle;
+      return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle : normalParagraphStyle;
   }
 }
 
