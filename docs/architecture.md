@@ -17,7 +17,7 @@ Markdown ─▶ parse ─▶ plan ─▶ convert / table ─▶ executor ─▶ 
 - **`table.ts`** — builds a `TablePlan` (rows, columns, each column's alignment, each cell's inline content) from a table node, and sizes its columns to the container width it lands in. A cell is a container holding one paragraph, filled through the same converter as every other block; its header row and column alignment give that paragraph its bold text and alignment (SPEC FR-14a, ST-4).
 - **`style.ts`** — the single source of truth for every typographic value: fonts, paragraph spacing, caption spacing, and every table style (cell padding, row style, header shading and text, column alignment), which the executor only places. Change the look here without touching conversion logic (SPEC ST-9, NF-6).
 - **`executor.ts`** — drives the document: creates or clears it, then walks the segments emitting `batchUpdate` rounds.
-- **`google.ts`** — the live REST client for Docs and Drive. Implements the `DocsClient` interface the executor depends on.
+- **`google.ts`** — the live REST client for Docs and Drive. Implements the `DocsClient` interface the executor depends on, and validates every response against the shape md2gd reads (`docs.ts` schemas), so a malformed reply fails with a clear message instead of reaching the executor.
 
 ## The testing seam
 
@@ -114,7 +114,7 @@ The scope is `drive` (which also authorises the Docs API's create/batchUpdate, s
 | `docs.ts` | Docs API request and document shapes |
 | `style.ts` | Central typographic style table |
 | `executor.ts` | Create/clear/fill orchestration, two-phase tables |
-| `google.ts` | Live Docs + Drive REST client (`DocsClient`) |
+| `google.ts` | Live Docs + Drive REST client (`DocsClient`), response validation |
 | `http.ts` | Retry with backoff for every Google request |
 | `oauth.ts`, `tokens.ts`, `init.ts` | OAuth flow, token cache, one-time setup |
 | `config.ts`, `mapping.ts` | Config paths and the file→doc mapping |
