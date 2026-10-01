@@ -21,6 +21,16 @@ describe("planDocument", () => {
     expect(segments.map((s) => s.kind)).toEqual(["table", "table"]);
   });
 
+  test("a table inside a quote becomes a table segment at that position", () => {
+    const md = "> before\n>\n> | A |\n> |---|\n> | 1 |\n>\n> after\n";
+    expect(planDocument(parseMarkdown(md)).map((s) => s.kind)).toEqual(["linear", "table", "linear"]);
+  });
+
+  test("a table inside a list item becomes a table segment between the items", () => {
+    const md = "- one\n\n  | A |\n  |---|\n  | 1 |\n\n- two\n";
+    expect(planDocument(parseMarkdown(md)).map((s) => s.kind)).toEqual(["linear", "table", "linear"]);
+  });
+
   test("only a linear run that follows a table is flagged afterTable", () => {
     const md = "Intro.\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nOutro.\n";
     const segments = planDocument(parseMarkdown(md));

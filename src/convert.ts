@@ -1,4 +1,4 @@
-import type { Blockquote, Code, List, ListItem, PhrasingContent, Root, RootContent } from "mdast";
+import type { Code, PhrasingContent, Root, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
 import {
   BODY_START_INDEX,
@@ -6,21 +6,27 @@ import {
   type Dimension,
   type DocRequest,
   fieldMask,
+  pt,
   type UpdateParagraphStyleRequest,
 } from "./docs";
 import { inlineRuns, LINE_BREAK } from "./inline";
+import { type BlockContext, type Leaf, planDocument } from "./plan";
 import {
   AFTER_TABLE_SPACE,
-  blockquoteParagraphStyle,
   bodyFontTextStyle,
+  type ContainerOverlay,
   captionParagraphStyle,
   codeBlockParagraphStyle,
   codeBlockTextStyle,
+  composeParagraphStyle,
   headingParagraphStyle,
   LIST_AFTER_SPACE,
+  LIST_ITEM_INDENT,
   listItemParagraphStyle,
   normalParagraphStyle,
   type ParagraphStyleSpec,
+  QUOTE_INDENT,
+  quoteParagraphStyle,
 } from "./style";
 
 interface BulletSpec {
@@ -46,11 +52,20 @@ interface Context {
  * reaching here fails loud.
  */
 export function convert(root: Root): DocRequest[] {
-  return convertNodes(root.children, BODY_START_INDEX).requests;
+  const leaves = planDocument(root).flatMap((segment) => {
+    // Tables cannot be emitted as absolute-indexed requests: their cell indices
+    // only exist after the empty table is inserted and read back, which only the
+    // executor can do. Fail loud rather than flatten one to garbage text.
+    if (segment.kind === "table") {
+      throw new Error("md2gd: tables are resolved by the document planner, not the linear converter");
+    }
+    return segment.leaves;
+  });
+  return convertLeaves(leaves, BODY_START_INDEX).requests;
 }
 
 /**
- * Convert a run of block nodes into `batchUpdate` requests placed from
+ * Convert a run of planned leaves into `batchUpdate` requests placed from
  * `startIndex`, returning the index just past the inserted content so the
  * caller can continue after it (e.g. following a table).
  *
@@ -58,16 +73,39 @@ export function convert(root: Root): DocRequest[] {
  * indices. Offsets come from JS string length — UTF-16 code units, matching the
  * Docs API — so emoji (surrogate pairs) count correctly. Pure and offline.
  */
-export function convertNodes(
-  nodes: RootContent[],
+export function convertLeaves(
+  leaves: Leaf[],
   startIndex: number,
   options: { afterTable?: boolean } = {},
 ): { requests: DocRequest[]; endIndex: number } {
   const ctx: Context = { requests: [], bullets: [], strippedTabs: 0 };
   let cursor = startIndex;
+  let openRange: (BulletSpec & { list: number }) | undefined;
 
-  for (const node of nodes) {
-    cursor = appendBlock(node, cursor, ctx);
+  for (const [i, leaf] of leaves.entries()) {
+    const start = cursor;
+    const requestStart = ctx.requests.length;
+    cursor = appendLeaf(leaf, cursor, ctx);
+
+    // Consecutive item-starting blocks of one list share a bullet range; any other
+    // block between them ends it, so Docs restarts an ordered list's numbering there.
+    const list = leaf.context.list;
+    if (list?.first && list.preset) {
+      if (openRange?.list === list.id && openRange.endIndex === start) {
+        openRange.endIndex = cursor;
+      } else {
+        openRange = { list: list.id, startIndex: start, endIndex: cursor, preset: list.preset };
+        ctx.bullets.push(openRange);
+      }
+    } else {
+      openRange = undefined;
+    }
+
+    // Items are tightly spaced; restore normal space below a list's final block
+    // so the list doesn't butt against what follows.
+    if (list && leaves[i + 1]?.context.list?.id !== list.id) {
+      ensureSpaceBelowOnLast(ctx.requests, requestStart, LIST_AFTER_SPACE);
+    }
   }
 
   // A run following a table needs space above its first block, since a table
@@ -86,33 +124,61 @@ export function convertNodes(
   return { requests: ctx.requests, endIndex: cursor - ctx.strippedTabs };
 }
 
-function appendBlock(node: RootContent, cursor: number, ctx: Context): number {
+function appendLeaf(leaf: Leaf, cursor: number, ctx: Context): number {
+  const { node, context } = leaf;
+  const list = context.list;
+  // An item's first block carries its marker: leading tabs that set its nesting
+  // level, and a task item's glyph. Bulleting strips the tabs. A task list has no
+  // bullets, so its tabs stay and every block of an item keeps them as its column.
+  const tabs = list ? "\t".repeat(list.depth) : "";
+  const bulleted = list?.preset !== undefined;
+  let lead = "";
+  if (list?.first) lead = `${tabs}${list.prefix ?? ""}`;
+  else if (list && !bulleted) lead = tabs;
+  if (list?.first && bulleted) ctx.strippedTabs += list.depth;
+  const spec = composeParagraphStyle(ownStyle(node, context), containerOverlay(context));
+
   switch (node.type) {
-    case "list":
-      return appendList(node, 0, cursor, ctx, false);
     case "heading":
-      return appendParagraph(node.children, cursor, ctx, 0, headingParagraphStyle(node.depth));
-    case "paragraph": {
-      const style = isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
-      return appendParagraph(node.children, cursor, ctx, 0, style);
-    }
+    case "paragraph":
+      return appendInline(lead, node.children, cursor, ctx, spec);
     case "code":
-      return appendCode(node, cursor, ctx);
-    case "blockquote":
-      return appendBlockquote(node, cursor, ctx);
-    case "thematicBreak":
-      // Ignored: a bordered rule looks poor in Docs, and headings already carry
-      // space above, so a thematic break contributes nothing.
-      return cursor;
-    case "table":
-      // Tables cannot be emitted as absolute-indexed requests: their cell indices
-      // only exist after the empty table is inserted and read back. The document
-      // planner handles them separately; one must never reach the linear
-      // converter, so fail loud rather than flatten it to garbage text.
-      throw new Error("md2gd: tables are resolved by the document planner, not the linear converter");
+      return appendCode(lead, node, cursor, ctx, spec);
     default:
-      return appendRaw(mdastToString(node), cursor, ctx, 0, normalParagraphStyle());
+      return emitParagraph(`${lead}${mdastToString(node)}`, [], cursor, ctx, spec);
   }
+}
+
+function ownStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec {
+  switch (node.type) {
+    case "heading":
+      return headingParagraphStyle(node.depth);
+    case "code":
+      return codeBlockParagraphStyle;
+    default:
+      if (context.list) return listItemParagraphStyle();
+      if (context.quoteDepth > 0) return quoteParagraphStyle;
+      return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
+  }
+}
+
+function containerOverlay(context: BlockContext): ContainerOverlay {
+  const quoted = context.quoteDepth > 0;
+  const list = context.list;
+  // A bulleted list's geometry is its bullets': an item's first block takes its
+  // nesting level's indent, and later blocks align under the item's text, so a
+  // quote around the list adds its accent but no indent. Quotes opened inside an
+  // item still indent within it.
+  if (list?.preset !== undefined) {
+    if (list.first) return { quoted };
+    const innerQuotes = context.quoteDepth - list.quoteBase;
+    return {
+      quoted,
+      indent: pt(innerQuotes * QUOTE_INDENT.magnitude + (list.depth + 1) * LIST_ITEM_INDENT.magnitude),
+    };
+  }
+  const indent = context.quoteDepth * QUOTE_INDENT.magnitude;
+  return { quoted, indent: indent > 0 ? pt(indent) : undefined };
 }
 
 /**
@@ -168,10 +234,11 @@ function isBoldOnly(children: PhrasingContent[]): boolean {
   );
 }
 
-function appendCode(node: Code, cursor: number, ctx: Context): number {
+function appendCode(lead: string, node: Code, cursor: number, ctx: Context, spec: ParagraphStyleSpec): number {
   // Internal newlines become in-paragraph line breaks so the whole block reads
   // as one shaded region rather than many separately-shaded paragraphs.
   const body = node.value.replaceAll("\n", LINE_BREAK);
+  const codeStart = cursor + lead.length;
   const styleRequests: DocRequest[] =
     body.length > 0
       ? [
@@ -179,118 +246,22 @@ function appendCode(node: Code, cursor: number, ctx: Context): number {
             updateTextStyle: {
               textStyle: codeBlockTextStyle,
               fields: fieldMask(codeBlockTextStyle),
-              range: { startIndex: cursor, endIndex: cursor + body.length },
+              range: { startIndex: codeStart, endIndex: codeStart + body.length },
             },
           },
         ]
       : [];
-  return emitParagraph(body, styleRequests, cursor, ctx, codeBlockParagraphStyle);
+  return emitParagraph(`${lead}${body}`, styleRequests, cursor, ctx, spec);
 }
 
-function appendBlockquote(node: Blockquote, cursor: number, ctx: Context): number {
-  for (const child of node.children) {
-    if (child.type === "paragraph") {
-      cursor = appendParagraph(child.children, cursor, ctx, 0, blockquoteParagraphStyle);
-    } else {
-      cursor = appendRaw(mdastToString(child), cursor, ctx, 0, blockquoteParagraphStyle);
-    }
-  }
-  return cursor;
-}
-
-function appendList(list: List, depth: number, cursor: number, ctx: Context, bulletedFromParent: boolean): number {
-  // A task list renders its checked state as a leading glyph (the Docs API can't
-  // pre-check a native checklist bullet), so it uses no bullet preset of its own.
-  const task = isTaskList(list);
-  // The outermost list decides whether a bullet preset covers the whole (nested)
-  // range; nested lists inherit it. Only a bulleted range has its tabs stripped.
-  const bulleted = depth === 0 ? !task : bulletedFromParent;
-  const listStart = cursor;
-  const requestStart = ctx.requests.length;
-
-  for (const item of list.children) {
-    cursor = appendListItem(item, depth, cursor, ctx, task, bulleted);
-  }
-
-  if (depth === 0 && cursor > listStart) {
-    // Only the outermost list emits a bullet request; nested levels are covered by
-    // the same range and distinguished by their leading-tab depth.
-    if (!task) ctx.bullets.push({ startIndex: listStart, endIndex: cursor, preset: bulletPreset(list) });
-    // Items are tightly spaced; restore normal space below the final one so the
-    // list doesn't butt against the following block.
-    ensureSpaceBelowOnLast(ctx.requests, requestStart, LIST_AFTER_SPACE);
-  }
-  return cursor;
-}
-
-function appendListItem(
-  item: ListItem,
-  depth: number,
-  cursor: number,
-  ctx: Context,
-  taskList: boolean,
-  bulleted: boolean,
-): number {
-  let first = true;
-  const prefix = itemPrefix(item, taskList);
-  for (const child of item.children) {
-    if (child.type === "list") {
-      cursor = appendList(child, depth + 1, cursor, ctx, bulleted);
-    } else if (child.type === "paragraph") {
-      // A task list has no bullet preset (the glyph is the marker), so the leading
-      // glyph goes on the item's first line — including a plain "•" for any non-task
-      // item mixed into the list, so it isn't left unmarked.
-      const inline = first && prefix ? [textNode(prefix), ...child.children] : child.children;
-      cursor = appendParagraph(inline, cursor, ctx, depth, listItemParagraphStyle(), bulleted);
-      first = false;
-    } else {
-      cursor = appendRaw(mdastToString(child), cursor, ctx, depth, listItemParagraphStyle(), bulleted);
-      first = false;
-    }
-  }
-  return cursor;
-}
-
-/** A GFM task list — at least one item carries a boolean checked state. */
-function isTaskList(list: List): boolean {
-  return list.children.some((item) => typeof item.checked === "boolean");
-}
-
-/**
- * Leading text marker for an item in a task list (which uses no bullet preset):
- * a checkbox glyph preserving checked state, or a plain bullet for a non-task
- * item mixed into the list. Non-task lists return undefined — their marker comes
- * from a `createParagraphBullets` preset instead.
- */
-function itemPrefix(item: ListItem, taskList: boolean): string | undefined {
-  if (typeof item.checked === "boolean") return item.checked ? "☑ " : "☐ ";
-  return taskList ? "• " : undefined;
-}
-
-function textNode(value: string): PhrasingContent {
-  return { type: "text", value };
-}
-
-// Known limitation: one preset applies to the whole (possibly nested) list, so a
-// list of one type nested inside another still renders with the outer preset's
-// per-level glyphs. Correct per-level presets for mixed nesting would need
-// separate bullet requests per contiguous same-type run. The target documents
-// use flat single-type lists, so this is documented rather than implemented.
-function bulletPreset(list: List): BulletPreset {
-  return list.ordered ? "NUMBERED_DECIMAL_ALPHA_ROMAN" : "BULLET_DISC_CIRCLE_SQUARE";
-}
-
-function appendParagraph(
+function appendInline(
+  lead: string,
   inline: PhrasingContent[],
   cursor: number,
   ctx: Context,
-  indent: number,
   spec: ParagraphStyleSpec,
-  bulleted = false,
 ): number {
-  if (bulleted) ctx.strippedTabs += indent;
-  const tabs = "\t".repeat(indent);
-  const base = cursor + tabs.length;
+  const base = cursor + lead.length;
   const content = inlineRuns(inline);
   const styleRequests: DocRequest[] = content.runs.map((run) => ({
     updateTextStyle: {
@@ -299,19 +270,7 @@ function appendParagraph(
       range: { startIndex: base + run.start, endIndex: base + run.end },
     },
   }));
-  return emitParagraph(`${tabs}${content.text}`, styleRequests, cursor, ctx, spec);
-}
-
-function appendRaw(
-  value: string,
-  cursor: number,
-  ctx: Context,
-  indent: number,
-  spec: ParagraphStyleSpec,
-  bulleted = false,
-): number {
-  if (bulleted) ctx.strippedTabs += indent;
-  return emitParagraph(`${"\t".repeat(indent)}${value}`, [], cursor, ctx, spec);
+  return emitParagraph(`${lead}${content.text}`, styleRequests, cursor, ctx, spec);
 }
 
 function emitParagraph(

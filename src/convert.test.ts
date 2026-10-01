@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { convert, convertNodes } from "./convert";
+import { convert, convertLeaves } from "./convert";
 import type {
   CreateParagraphBulletsRequest,
   InsertTextRequest,
@@ -7,6 +7,11 @@ import type {
   UpdateTextStyleRequest,
 } from "./docs";
 import { parseMarkdown } from "./parse";
+import { type Leaf, planDocument } from "./plan";
+
+function leavesOf(markdown: string): Leaf[] {
+  return planDocument(parseMarkdown(markdown)).flatMap((segment) => (segment.kind === "linear" ? segment.leaves : []));
+}
 
 function insertedText(reqs: ReturnType<typeof convert>): string {
   return reqs
@@ -158,16 +163,14 @@ describe("convert lists", () => {
     // Nested list: "a\n\tb\n" is 5 code units from index 1, but bulleting strips
     // the one leading tab, so the real body ends at 5, not 6. A table placed at
     // the raw end would be past the segment's end and fail to insert.
-    const nested = parseMarkdown("- a\n  - b\n");
-    expect(convertNodes(nested.children, 1).endIndex).toBe(5);
+    expect(convertLeaves(leavesOf("- a\n  - b\n"), 1).endIndex).toBe(5);
     // A flat list has no nesting tabs, so its end index is unchanged.
-    const flat = parseMarkdown("- a\n- b\n");
-    expect(convertNodes(flat.children, 1).endIndex).toBe(5);
+    expect(convertLeaves(leavesOf("- a\n- b\n"), 1).endIndex).toBe(5);
   });
 
   test("a task list keeps its tabs (no bullet preset strips them), so the end index counts them", () => {
     // A task list uses glyphs, not a bullet preset, so nothing strips the tab.
-    const reqs = convertNodes(parseMarkdown("- [ ] a\n  - [ ] b\n").children, 1);
+    const reqs = convertLeaves(leavesOf("- [ ] a\n  - [ ] b\n"), 1);
     expect(insertedText(reqs.requests)).toBe("☐ a\n\t☐ b\n");
     expect(reqs.endIndex).toBe(1 + "☐ a\n\t☐ b\n".length);
   });
@@ -317,7 +320,7 @@ describe("convert typography and styling coverage", () => {
   });
 
   test("a run following a table gets space above its first block", () => {
-    const { requests } = convertNodes(parseMarkdown("Outro.\n").children, 1, { afterTable: true });
+    const { requests } = convertLeaves(leavesOf("Outro.\n"), 1, { afterTable: true });
     const first = requests.find((r) => "updateParagraphStyle" in r);
     const style = first && "updateParagraphStyle" in first ? first.updateParagraphStyle : undefined;
     expect(style?.paragraphStyle.spaceAbove?.magnitude).toBeGreaterThanOrEqual(10);
@@ -325,7 +328,7 @@ describe("convert typography and styling coverage", () => {
   });
 
   test("a first heading after a table keeps its own larger space above", () => {
-    const { requests } = convertNodes(parseMarkdown("## Next\n").children, 1, { afterTable: true });
+    const { requests } = convertLeaves(leavesOf("## Next\n"), 1, { afterTable: true });
     const first = requests.find((r) => "updateParagraphStyle" in r);
     const style = first && "updateParagraphStyle" in first ? first.updateParagraphStyle : undefined;
     // HEADING_2's 16pt is not reduced to the 10pt floor.
@@ -343,6 +346,112 @@ describe("convert typography and styling coverage", () => {
     const quote = paragraphStyles(convert(parseMarkdown("> q\n")))[0]?.updateParagraphStyle.paragraphStyle;
     expect(code?.spaceBelow?.magnitude).toBeGreaterThan(0);
     expect(quote?.spaceBelow?.magnitude).toBeGreaterThan(0);
+  });
+});
+
+describe("convert blocks nested in quotes and list items", () => {
+  const requestAt = (reqs: ReturnType<typeof convert>, text: string) => {
+    const start = insertedText(reqs).indexOf(text) + 1;
+    return paragraphStyles(reqs).find((s) => s.updateParagraphStyle.range.startIndex === start)?.updateParagraphStyle;
+  };
+  const styleAt = (reqs: ReturnType<typeof convert>, text: string) => requestAt(reqs, text)?.paragraphStyle;
+  const fieldsAt = (reqs: ReturnType<typeof convert>, text: string) => requestAt(reqs, text)?.fields.split(",") ?? [];
+  const ranges = (reqs: ReturnType<typeof convert>) => bullets(reqs).map((b) => b.createParagraphBullets.range);
+
+  test("a list inside a quote bullets each item, and every item carries the quote border but no indent of its own", () => {
+    const reqs = convert(parseMarkdown("> intro\n>\n> 1. first\n> 2. second\n"));
+    expect(insertedText(reqs)).toBe("intro\nfirst\nsecond\n");
+    expect(ranges(reqs)).toEqual([{ startIndex: 7, endIndex: 20 }]);
+    for (const item of ["first", "second"]) {
+      expect(styleAt(reqs, item)?.borderLeft).toBeDefined();
+      expect(fieldsAt(reqs, item)).toContain("borderLeft");
+      expect(styleAt(reqs, item)?.indentStart).toBeUndefined();
+    }
+  });
+
+  test("a later block of an item in a quoted list aligns under the item's text, not the quote", () => {
+    const reqs = convert(parseMarkdown("> - a\n>\n>   more\n> - b\n"));
+    expect(styleAt(reqs, "more")?.indentStart?.magnitude).toBe(36);
+    expect(styleAt(reqs, "more")?.borderLeft).toBeDefined();
+  });
+
+  test("a nested quote indents one quote step deeper than its parent and keeps a left border", () => {
+    const reqs = convert(parseMarkdown("> outer\n>\n> > inner\n"));
+    expect(styleAt(reqs, "outer")?.indentStart?.magnitude).toBe(24);
+    expect(styleAt(reqs, "inner")?.indentStart?.magnitude).toBe(48);
+    expect(styleAt(reqs, "inner")?.indentFirstLine?.magnitude).toBe(48);
+    expect(styleAt(reqs, "inner")?.borderLeft).toBeDefined();
+  });
+
+  test("a code block inside a list item is shaded, indented under the item, and not bulleted", () => {
+    const reqs = convert(parseMarkdown("- item\n\n  ```\n  code\n  ```\n"));
+    expect(insertedText(reqs)).toBe("item\ncode\n");
+    expect(styleAt(reqs, "code")?.shading).toBeDefined();
+    expect(styleAt(reqs, "code")?.indentStart?.magnitude).toBe(36);
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 6 }]);
+  });
+
+  test("a quote inside a list item carries the border and both indents, and is not bulleted", () => {
+    const reqs = convert(parseMarkdown("- item\n\n  > quoted\n"));
+    expect(styleAt(reqs, "quoted")?.indentStart?.magnitude).toBe(60);
+    expect(styleAt(reqs, "quoted")?.borderLeft).toBeDefined();
+    expect(fieldsAt(reqs, "quoted")).toEqual(expect.arrayContaining(["borderLeft", "indentStart", "indentFirstLine"]));
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 6 }]);
+  });
+
+  test("a later block of a task-list item keeps the item's column instead of shifting right", () => {
+    const reqs = convert(parseMarkdown("- [ ] a\n\n  more\n  - [ ] b\n\n    deeper\n"));
+    expect(insertedText(reqs)).toBe("☐ a\nmore\n\t☐ b\n\tdeeper\n");
+    expect(styleAt(reqs, "more")?.indentStart).toBeUndefined();
+  });
+
+  test("a nested list after an item's second paragraph starts its own bullet range", () => {
+    const reqs = convert(parseMarkdown("- a\n\n  para\n\n  - b\n- c\n"));
+    expect(insertedText(reqs)).toBe("a\npara\n\tb\nc\n");
+    expect(ranges(reqs)).toEqual([
+      { startIndex: 8, endIndex: 13 },
+      { startIndex: 1, endIndex: 3 },
+    ]);
+    expect(convertLeaves(leavesOf("- a\n\n  para\n\n  - b\n- c\n"), 1).endIndex).toBe(12);
+  });
+
+  test("an item whose first block is a heading is bulleted and keeps its heading style", () => {
+    const reqs = convert(parseMarkdown("- # Title\n"));
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 7 }]);
+    expect(styleAt(reqs, "Title")?.namedStyleType).toBe("HEADING_1");
+  });
+
+  test("an empty list item keeps its place in the list", () => {
+    const reqs = convert(parseMarkdown("1. a\n2.\n3. c\n"));
+    expect(insertedText(reqs)).toBe("a\n\nc\n");
+    expect(ranges(reqs)).toEqual([{ startIndex: 1, endIndex: 6 }]);
+  });
+
+  test("a second paragraph in a list item is indented and only the first paragraph is bulleted", () => {
+    const reqs = convert(parseMarkdown("1. first\n\n   more\n2. second\n"));
+    expect(insertedText(reqs)).toBe("first\nmore\nsecond\n");
+    expect(styleAt(reqs, "more")?.indentStart?.magnitude).toBe(36);
+    const ranges = bullets(reqs).map((b) => b.createParagraphBullets.range);
+    expect(ranges).toContainEqual({ startIndex: 1, endIndex: 7 });
+    expect(ranges).toContainEqual({ startIndex: 12, endIndex: 19 });
+    expect(ranges).toHaveLength(2);
+  });
+
+  test("a heading inside a quote keeps its heading style and gains the border", () => {
+    const style = styleAt(convert(parseMarkdown("> ## Title\n")), "Title");
+    expect(style?.namedStyleType).toBe("HEADING_2");
+    expect(style?.borderLeft).toBeDefined();
+  });
+
+  test("a task list inside a quote keeps its glyphs and the border", () => {
+    const reqs = convert(parseMarkdown("> - [x] done\n> - [ ] open\n"));
+    expect(insertedText(reqs)).toBe("☑ done\n☐ open\n");
+    expect(bullets(reqs)).toHaveLength(0);
+    expect(styleAt(reqs, "☑ done")?.borderLeft).toBeDefined();
+  });
+
+  test("the end index after a quoted nested list discounts the stripped nesting tabs", () => {
+    expect(convertLeaves(leavesOf("> - a\n>   - b\n"), 1).endIndex).toBe(5);
   });
 });
 

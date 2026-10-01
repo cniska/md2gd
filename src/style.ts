@@ -1,4 +1,12 @@
-import { type Dimension, fieldMask, type NamedStyleType, type ParagraphStyle, pt, type TextStyle } from "./docs";
+import {
+  type Dimension,
+  fieldMask,
+  type NamedStyleType,
+  type ParagraphBorder,
+  type ParagraphStyle,
+  pt,
+  type TextStyle,
+} from "./docs";
 
 /**
  * Central style table — the single source of truth for the "clean sensible
@@ -164,14 +172,45 @@ export const codeBlockParagraphStyle: ParagraphStyleSpec = spec({
 /** Monospace text style for whole code blocks (no per-run background). */
 export const codeBlockTextStyle: TextStyle = { weightedFontFamily: { fontFamily: MONO_FONT } };
 
-/** Blockquote: indented with an accent bar on the left. */
-export const blockquoteParagraphStyle: ParagraphStyleSpec = spec({
-  indentStart: pt(24),
-  // Match the first-line indent to the start indent. Docs applies indentStart to
-  // every line after a break but indentFirstLine (default 0) to the first, so a
-  // multi-line quote would otherwise hang its continuation lines to the right.
-  indentFirstLine: pt(24),
-  borderLeft: { color: BORDER_GREY, width: pt(3), padding: pt(8), dashStyle: "SOLID" },
+/** A paragraph directly in a quote; the quote's indent and accent come from `composeParagraphStyle`. */
+export const quoteParagraphStyle: ParagraphStyleSpec = spec({
   spaceAbove: pt(6),
   spaceBelow: pt(10),
 });
+
+/** Indent added per level of quote nesting. */
+export const QUOTE_INDENT: Dimension = pt(24);
+
+/** Indent of a list item's blocks after its first, per list level, aligned under the item's text. */
+export const LIST_ITEM_INDENT: Dimension = pt(36);
+
+const QUOTE_BORDER: ParagraphBorder = {
+  color: BORDER_GREY,
+  width: pt(3),
+  padding: pt(8),
+  dashStyle: "SOLID",
+};
+
+/** The styling a block inherits from the quotes and list items it sits in. */
+export interface ContainerOverlay {
+  indent?: Dimension;
+  quoted: boolean;
+}
+
+/**
+ * Compose a block's own paragraph style with its containers' overlay. Docs has
+ * one left border per paragraph, so any depth of quoting draws a single accent.
+ */
+export function composeParagraphStyle(base: ParagraphStyleSpec, overlay: ContainerOverlay): ParagraphStyleSpec {
+  const extra: ParagraphStyle = {};
+  if (overlay.indent) {
+    extra.indentStart = overlay.indent;
+    // Match the first-line indent to the start indent. Docs applies indentStart to
+    // every line after a break but indentFirstLine (default 0) to the first, so a
+    // multi-line block would otherwise hang its continuation lines to the right.
+    extra.indentFirstLine = overlay.indent;
+  }
+  if (overlay.quoted) extra.borderLeft = QUOTE_BORDER;
+  if (Object.keys(extra).length === 0) return base;
+  return spec({ ...base.paragraphStyle, ...extra });
+}

@@ -12,8 +12,8 @@ Markdown ─▶ parse ─▶ plan ─▶ convert / table ─▶ executor ─▶ 
 ```
 
 - **`parse.ts`** — Markdown to an mdast tree via `unified`: `remark-parse` + `remark-gfm` (tables, strikethrough, task lists, footnotes, autolinks) + `remark-breaks`. `remark-breaks` is the soft-break policy (SPEC FR-32): a single newline inside a paragraph becomes a hard line break, reproducing stacked-line intent instead of collapsing to a space.
-- **`plan.ts`** — splits the tree into an ordered list of segments. A run of non-table blocks is one `linear` segment; each table is its own `table` segment. This split exists because table cell indices do not exist until the table is inserted (see below), so tables cannot be converted deterministically the way linear content can.
-- **`convert.ts` / `inline.ts`** — turn linear nodes into Docs requests at a known cursor, resolving inline formatting (bold, italic, code, links, strikethrough) into styled text runs.
+- **`plan.ts`** — walks the tree, through blockquotes and list items at any depth, into an ordered list of segments. Google Docs has no block container: a quote and a list item exist only as styling on each paragraph, so every non-table block becomes a leaf carrying its context — quote depth, and its list placement (outermost list, nesting depth, preset, whether it starts the item). A run of leaves is one `linear` segment; each table, wherever it sits, is its own `table` segment. This split exists because table cell indices do not exist until the table is inserted (see below), so tables cannot be converted deterministically the way linear content can.
+- **`convert.ts` / `inline.ts`** — turn leaves into Docs requests at a known cursor, resolving inline formatting (bold, italic, code, links, strikethrough) into styled text runs. Each leaf's paragraph style is its own spec composed with its context's overlay in `style.ts`: a quote adds its accent and indent, a list item's later blocks add the item's indent, and an item's first block carries the marker.
 - **`table.ts`** — builds a `TablePlan` (rows, columns, per-column fixed widths, per-cell text and styled runs) from a table node.
 - **`style.ts`** — the single source of truth for every typographic value: fonts, paragraph spacing, cell padding, header shading, caption spacing. Change the look here without touching conversion logic (SPEC ST-9, NF-6).
 - **`executor.ts`** — drives the document: creates or clears it, then walks the segments emitting `batchUpdate` rounds.
@@ -48,6 +48,12 @@ After the fills, the table's size has changed, so the executor re-reads the docu
 The API injects an empty paragraph immediately before every inserted table. Left alone it renders inconsistently and breaks caption grouping. The executor pins that paragraph to a thin ~6pt spacer, styled only on its single newline index so no real caption or heading text is shrunk. This keeps create and update rendering identical and lets a bold caption sit close to the table it introduces (SPEC FR-34, FR-35).
 
 **Why not just delete it?** Removing the paragraph seems cleaner, but the Docs API rejects it: `deleteContentRange` over the newline immediately before a table returns `400 Invalid deletion range. Cannot delete the requested range.` (The Docs editor lets you backspace it; the API does not.) The spacer is a required workaround, not a stylistic choice — do not reintroduce a delete here; tuning its size is the only safe lever.
+
+### Lists split by other blocks
+
+`createParagraphBullets` decides each paragraph's level by counting leading tabs, then strips them, which shifts every later index. Bullet requests therefore run last, in reverse document order, and the linear end index subtracts the stripped tabs. The request cannot name an existing list; per the [`CreateParagraphBulletsRequest` reference](https://developers.google.com/docs/api/reference/rest/v1/documents/request#createparagraphbulletsrequest), "if the paragraph immediately before paragraphs being updated is in a list with a matching preset, the paragraphs being updated are added to that preceding list." So when an item holds more than one block, the item-starting blocks around the extra block become separate ranges, and an ordered list restarts its numbering after it (SPEC FR-45).
+
+A bulleted paragraph takes its indent from its nesting level, so a list inside a quote keeps the quote's accent but not its indent. An item's later blocks follow the bullets' geometry — 36pt per level, under the item's text — and only quotes opened inside the item add to it. A task list has no bullets, so its blocks keep their leading tabs and the quote's indent.
 
 ### Clear-and-rewrite update
 
@@ -84,8 +90,8 @@ The scope is `drive` (which also authorises the Docs API's create/batchUpdate, s
 | `cli.ts` | Command dispatch, stdout/stderr, exit codes |
 | `args.ts` | Argument parsing into a pure `Command` (unit-tested without I/O) |
 | `parse.ts` | Markdown to mdast, GFM + soft-break policy |
-| `plan.ts` | Tree to linear/table segments |
-| `convert.ts`, `inline.ts` | Linear nodes to styled Docs requests |
+| `plan.ts` | Tree to segments of leaves and tables, at any nesting depth |
+| `convert.ts`, `inline.ts` | Leaves to styled Docs requests |
 | `table.ts` | Table node to a `TablePlan` with column widths |
 | `style.ts` | Central typographic style table |
 | `executor.ts` | Create/clear/fill orchestration, two-phase tables |
