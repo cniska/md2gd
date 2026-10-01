@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
@@ -28,36 +28,31 @@ const DOC_MIME = "application/vnd.google-apps.document";
 const REPO_ROOT = resolve(import.meta.dir, "..");
 const CLI_TIMEOUT_MS = 10 * 60_000;
 
-const TextRunSchema = z.object({ content: z.string().optional() }).passthrough();
-const ParagraphSchema = z
-  .object({
-    elements: z.array(z.object({ textRun: TextRunSchema.optional() }).passthrough()).default([]),
-    paragraphStyle: z.object({ namedStyleType: z.string().optional() }).passthrough().optional(),
-    bullet: z.object({ nestingLevel: z.number().optional() }).passthrough().optional(),
-  })
-  .passthrough();
+const ParagraphSchema = z.looseObject({
+  elements: z
+    .array(z.looseObject({ textRun: z.looseObject({ content: z.string().optional() }).optional() }))
+    .default([]),
+  paragraphStyle: z.looseObject({ namedStyleType: z.string().optional() }).optional(),
+  bullet: z.looseObject({ nestingLevel: z.number().optional() }).optional(),
+});
 
-type Element = {
-  paragraph?: z.infer<typeof ParagraphSchema>;
-  table?: { tableRows: { tableCells: { content: Element[] }[] }[] };
-};
+const ElementSchema = z.looseObject({
+  paragraph: ParagraphSchema.optional(),
+  get table() {
+    return z
+      .looseObject({
+        tableRows: z.array(z.looseObject({ tableCells: z.array(z.looseObject({ content: z.array(ElementSchema) })) })),
+      })
+      .optional();
+  },
+});
 
-const ElementSchema: z.ZodType<Element> = z.lazy(() =>
-  z
-    .object({
-      paragraph: ParagraphSchema.optional(),
-      table: z
-        .object({
-          tableRows: z.array(z.object({ tableCells: z.array(z.object({ content: z.array(ElementSchema) })) })),
-        })
-        .optional(),
-    })
-    .passthrough(),
-);
+type Element = z.infer<typeof ElementSchema>;
 
-export const DocumentSchema = z
-  .object({ title: z.string(), body: z.object({ content: z.array(ElementSchema) }) })
-  .passthrough();
+export const DocumentSchema = z.looseObject({
+  title: z.string(),
+  body: z.looseObject({ content: z.array(ElementSchema) }),
+});
 
 /**
  * A plain-text view of a document's structure, one line per paragraph, so an
@@ -174,7 +169,6 @@ function createIsolatedHome(secretJson: string, token: StoredToken): string {
     mkdirSync(configDir, { recursive: true, mode: 0o700 });
     writeFileSync(join(configDir, "client_secret.json"), secretJson, { mode: 0o600 });
     writeFileSync(join(configDir, "token.json"), JSON.stringify(token), { mode: 0o600 });
-    chmodSync(home, 0o700);
     return home;
   } catch (error) {
     rmSync(home, { recursive: true, force: true });
