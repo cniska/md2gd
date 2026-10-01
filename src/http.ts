@@ -51,7 +51,12 @@ export async function fetchWithRetry(
 export async function isRateLimited(res: Response): Promise<boolean> {
   if (res.status === 429) return true;
   if (res.status !== 403) return false;
-  const parsed = ErrorReasonsSchema.safeParse(await res.clone().json().catch(() => undefined));
+  const parsed = ErrorReasonsSchema.safeParse(
+    await res
+      .clone()
+      .json()
+      .catch(() => undefined),
+  );
   return parsed.success && parsed.data.error.errors.some((e) => RATE_LIMIT_REASONS.has(e.reason ?? ""));
 }
 
