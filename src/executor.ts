@@ -6,17 +6,17 @@ import {
   type DocumentResource,
   fieldMask,
   pt,
-  type TableCellStyle,
 } from "./docs";
 import type { Leaf, QuoteSegment, Segment } from "./plan";
 import {
-  CELL_PADDING,
-  HEADER_SHADING,
+  headerCellStyle,
   normalParagraphStyle,
   preTableParagraphStyle,
   preTableTextStyle,
   QUOTE_INSET_PT,
   quoteCellStyle,
+  tableCellStyle,
+  tableRowStyle,
 } from "./style";
 import { columnWidths, type TablePlan } from "./table";
 
@@ -181,9 +181,9 @@ async function insertTableSegment(
   const requests: DocRequest[] = [
     ...preTableSpacerRequests(located.startIndex),
     ...columnWidthRequests(plan, contentWidth, located.startIndex),
-    cellPaddingRequest(located.startIndex),
-    preventRowSplitRequest(located.startIndex),
-    ...(plan.header ? [headerShadingRequest(plan, located.startIndex)] : []),
+    cellStyleRequest(located.startIndex),
+    rowStyleRequest(located.startIndex),
+    ...(plan.header ? [headerCellStyleRequest(plan, located.startIndex)] : []),
     ...cellFillRequests(plan, located.cellIndices),
   ];
   await client.batchUpdate(documentId, requests);
@@ -339,37 +339,31 @@ function columnWidthRequests(plan: TablePlan, contentWidth: number, tableStart: 
   }));
 }
 
-function preventRowSplitRequest(tableStart: number): DocRequest {
-  // Applies to every row (no rowIndices) so a row is never split across a page
-  // break — the whole row moves to the next page instead.
-  const style = { preventOverflow: true };
+function rowStyleRequest(tableStart: number): DocRequest {
   return {
-    updateTableRowStyle: { tableStartLocation: { index: tableStart }, tableRowStyle: style, fields: fieldMask(style) },
+    updateTableRowStyle: {
+      tableStartLocation: { index: tableStart },
+      tableRowStyle: tableRowStyle,
+      fields: fieldMask(tableRowStyle),
+    },
   };
 }
 
-function cellPaddingRequest(tableStart: number): DocRequest {
-  const style: TableCellStyle = {
-    paddingTop: CELL_PADDING,
-    paddingBottom: CELL_PADDING,
-    paddingLeft: CELL_PADDING,
-    paddingRight: CELL_PADDING,
-  };
+function cellStyleRequest(tableStart: number): DocRequest {
   return {
     updateTableCellStyle: {
-      tableCellStyle: style,
-      fields: fieldMask(style),
+      tableCellStyle: tableCellStyle,
+      fields: fieldMask(tableCellStyle),
       tableStartLocation: { index: tableStart },
     },
   };
 }
 
-function headerShadingRequest(plan: TablePlan, tableStart: number): DocRequest {
-  const style: TableCellStyle = { backgroundColor: HEADER_SHADING };
+function headerCellStyleRequest(plan: TablePlan, tableStart: number): DocRequest {
   return {
     updateTableCellStyle: {
-      tableCellStyle: style,
-      fields: fieldMask(style),
+      tableCellStyle: headerCellStyle,
+      fields: fieldMask(headerCellStyle),
       tableRange: {
         tableCellLocation: { tableStartLocation: { index: tableStart }, rowIndex: 0, columnIndex: 0 },
         rowSpan: 1,
@@ -390,7 +384,10 @@ function cellFillRequests(plan: TablePlan, cellIndices: number[][]): DocRequest[
     cellRow.flatMap((cell, col) => {
       const index = cellIndices[row]?.[col];
       if (index === undefined) return [];
-      const leaf: Leaf = { node: { type: "paragraph", children: cell.content }, context: {} };
+      const leaf: Leaf = {
+        node: { type: "paragraph", children: cell.content },
+        context: { cell: { header: plan.header && row === 0, align: plan.align[col] ?? null } },
+      };
       const fill = convertLeaves([leaf], index, { startsContainer: true, endsContainer: true });
       return [{ index, requests: fill.requests }];
     }),

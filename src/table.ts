@@ -1,4 +1,4 @@
-import type { PhrasingContent, Table } from "mdast";
+import type { AlignType, PhrasingContent, Table } from "mdast";
 import type { Dimension } from "./docs";
 import { pt } from "./docs";
 import { inlineRuns } from "./inline";
@@ -21,6 +21,8 @@ export interface TablePlan {
   columns: number;
   /** Whether the first row is a header (GFM tables always have one). */
   header: boolean;
+  /** Each column's alignment from the delimiter row; null where the column sets none. */
+  align: AlignType[];
   /** Cell content indexed as cells[row][column]. */
   cells: CellPlan[][];
 }
@@ -42,7 +44,8 @@ export function buildTablePlan(table: Table): TablePlan {
     while (row.length < columns) row.push(emptyCell());
   }
 
-  return { rows, columns, header: rows > 0, cells };
+  const align = Array.from({ length: columns }, (_, col) => table.align?.[col] ?? null);
+  return { rows, columns, header: rows > 0, align, cells };
 }
 
 // Approximate glyph advances at the 11pt body size, deliberately generous so a

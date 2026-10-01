@@ -1,11 +1,13 @@
-import type { Heading } from "mdast";
+import type { AlignType, Heading } from "mdast";
 import {
+  type Alignment,
   type Dimension,
   fieldMask,
   type ParagraphStyle,
   pt,
   type TableCellBorder,
   type TableCellStyle,
+  type TableRowStyle,
   type TextStyle,
 } from "./docs";
 
@@ -109,6 +111,32 @@ export const MIN_COLUMN_WIDTH_PT = 54;
 /** Internal padding on every table cell, so text never touches the borders. */
 export const CELL_PADDING: Dimension = pt(5);
 
+export const tableCellStyle: TableCellStyle = {
+  paddingTop: CELL_PADDING,
+  paddingBottom: CELL_PADDING,
+  paddingLeft: CELL_PADDING,
+  paddingRight: CELL_PADDING,
+};
+
+/** A row that doesn't fit moves whole to the next page rather than splitting across the break. */
+export const tableRowStyle: TableRowStyle = { preventOverflow: true };
+
+/** A subtle grey fill distinguishing a table's header row. */
+export const headerCellStyle: TableCellStyle = {
+  backgroundColor: { color: { rgbColor: { red: 0.9, green: 0.9, blue: 0.9 } } },
+};
+
+/** A header cell's text is bold, as rendered Markdown sets a header row. */
+export const headerCellTextStyle: TextStyle = { ...bodyFontTextStyle, bold: true };
+
+const CELL_ALIGNMENT: Record<NonNullable<AlignType>, Alignment> = { left: "START", center: "CENTER", right: "END" };
+
+/** A block's own style aligned as its table column says; a column without alignment keeps the block's own. */
+export function alignedParagraphStyle(own: ParagraphStyleSpec, align: AlignType): ParagraphStyleSpec {
+  if (!align) return own;
+  return spec({ ...own.paragraphStyle, alignment: CELL_ALIGNMENT[align] });
+}
+
 /**
  * The Docs API injects an empty paragraph immediately before every table. Left
  * alone it inherits whatever style preceded it — which differs between a fresh
@@ -127,9 +155,6 @@ export const preTableTextStyle: TextStyle = { fontSize: pt(6) };
 
 /** Space above the first block after a table, since a table carries no space below itself. */
 export const AFTER_TABLE_SPACE: Dimension = pt(10);
-
-/** Subtle grey fill distinguishing a table's header row. */
-export const HEADER_SHADING = { color: { rgbColor: { red: 0.9, green: 0.9, blue: 0.9 } } };
 
 const BORDER_GREY = { color: { rgbColor: { red: 0.7, green: 0.7, blue: 0.7 } } };
 

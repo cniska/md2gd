@@ -43,8 +43,11 @@ export interface ParagraphBorder {
   dashStyle: DashStyle;
 }
 
+export type Alignment = "START" | "CENTER" | "END";
+
 export interface ParagraphStyle {
   namedStyleType?: NamedStyleType;
+  alignment?: Alignment;
   lineSpacing?: number;
   spaceAbove?: Dimension;
   spaceBelow?: Dimension;

@@ -1,4 +1,4 @@
-import type { List, ListItem, Root, RootContent } from "mdast";
+import type { AlignType, List, ListItem, Root, RootContent } from "mdast";
 import type { BulletPreset } from "./docs";
 import { buildTablePlan, type TablePlan } from "./table";
 
@@ -9,6 +9,13 @@ import { buildTablePlan, type TablePlan } from "./table";
  */
 export interface BlockContext {
   list?: ListPlacement;
+  cell?: CellPlacement;
+}
+
+/** A table cell's paragraph: its row and column decide its weight and alignment. */
+export interface CellPlacement {
+  header: boolean;
+  align: AlignType;
 }
 
 export interface ListPlacement {

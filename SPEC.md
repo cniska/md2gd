@@ -54,6 +54,7 @@ The tool must faithfully render the following, mapping each to the closest nativ
 - **FR-12** — Bulleted and numbered lists, including nested lists (at least 3 levels deep) with correct indentation and marker style per level.
 - **FR-13** — Task lists (`- [ ]` / `- [x]`) rendered legibly (checkbox glyphs or Google Docs checklist).
 - **FR-14** — Tables, including header rows, with clean styling (see §3). Tables are the highest-frequency rich element in the user's docs and must render cleanly, preserving cell content including inline formatting and emoji.
+- **FR-14a** — A table column's alignment (`:--` left, `:-:` center, `--:` right) applies to every cell in that column, header included; a column without one is left-aligned.
 - **FR-15** — Fenced and indented code blocks, in a monospace font with visual distinction from body text (e.g. shaded background or bordered block). Language hints need not produce syntax highlighting in v1.
 - **FR-16** — Blockquotes, visually distinct from body text.
 - **FR-17** — Horizontal rules (`---`) are **ignored** (produce no output). A bordered rule renders poorly in Google Docs, and heading spacing already separates sections, so thematic breaks are dropped rather than drawn.
@@ -144,7 +145,7 @@ The chosen visual identity is a **neutral, clean, professional default** — no 
 - **ST-1** — A coherent typographic hierarchy: body text in a highly readable serif or sans-serif at a comfortable reading size; headings clearly differentiated by size and weight, with H1 > H2 > H3 visibly distinct.
 - **ST-2** — Sensible vertical rhythm: adequate space before/after headings, paragraphs, and lists so the document breathes and isn't cramped.
 - **ST-3** — Comfortable line spacing for body text (not single-spaced dense).
-- **ST-4** — Tables styled for readability: a visually distinct header row (e.g. bold and/or subtle background shade), light cell borders or row banding, and adequate cell padding. Tables must not overflow the page width, and a row must not split across a page break — a row that doesn't fit moves whole to the next page.
+- **ST-4** — Tables styled for readability: a header row set apart by bold text and a subtle background shade, light cell borders or row banding, and adequate cell padding. Tables must not overflow the page width, and a row must not split across a page break — a row that doesn't fit moves whole to the next page.
 - **ST-5** — Code and inline code in a monospace font, visually set apart from prose.
 - **ST-6** — Blockquotes visually indented and/or accented.
 - **ST-7** — Consistent, professional page margins.

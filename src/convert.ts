@@ -1,14 +1,16 @@
 import type { Code, PhrasingContent, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
-import { type BulletPreset, type Dimension, type DocRequest, fieldMask, pt } from "./docs";
+import { type BulletPreset, type Dimension, type DocRequest, fieldMask, pt, type TextStyle } from "./docs";
 import { inlineRuns, LINE_BREAK } from "./inline";
 import type { Leaf } from "./plan";
 import {
   AFTER_TABLE_SPACE,
+  alignedParagraphStyle,
   bodyFontTextStyle,
   captionParagraphStyle,
   codeBlockParagraphStyle,
   codeBlockTextStyle,
+  headerCellTextStyle,
   headingParagraphStyle,
   LIST_AFTER_SPACE,
   listLaterBlockIndent,
@@ -162,22 +164,43 @@ function appendLeaf(leaf: Leaf, cursor: number, ctx: Context, spacing: Spacing):
   if (list?.first) lead = `${tabs}${list.prefix ?? ""}`;
   else if (list && !bulleted) lead = tabs;
   if (list?.first && bulleted && list.depth > 0) ctx.tabStrips.push({ index: cursor, tabs: list.depth });
-  const own = ownStyle(node);
-  const spec = spacedParagraphStyle(own, spaceAbove(own, spacing), spaceBelow(own, spacing));
+  const own = ownStyle(leaf);
+  const style: BlockStyle = {
+    paragraph: spacedParagraphStyle(
+      own.paragraph,
+      spaceAbove(own.paragraph, spacing),
+      spaceBelow(own.paragraph, spacing),
+    ),
+    text: own.text,
+  };
 
   switch (node.type) {
     case "heading":
     case "paragraph":
-      return appendInline(lead, node.children, cursor, ctx, spec);
+      return appendInline(lead, node.children, cursor, ctx, style);
     case "code":
-      return appendCode(lead, node, cursor, ctx, spec);
+      return appendCode(lead, node, cursor, ctx, style);
     default:
-      return emitParagraph(`${lead}${mdastToString(node)}`, [], cursor, ctx, spec);
+      return emitParagraph(`${lead}${mdastToString(node)}`, [], cursor, ctx, style);
   }
 }
 
+/** A block's paragraph style, and the text style its inline runs are layered over. */
+interface BlockStyle {
+  paragraph: ParagraphStyleSpec;
+  text: TextStyle;
+}
+
 /** A block's own style, from what it is alone; where it sits only changes its spacing. */
-function ownStyle(node: RootContent): ParagraphStyleSpec {
+function ownStyle({ node, context }: Leaf): BlockStyle {
+  const cell = context.cell;
+  return {
+    paragraph: alignedParagraphStyle(ownParagraphStyle(node), cell?.align ?? null),
+    text: cell?.header ? headerCellTextStyle : bodyFontTextStyle,
+  };
+}
+
+function ownParagraphStyle(node: RootContent): ParagraphStyleSpec {
   switch (node.type) {
     case "heading":
       return headingParagraphStyle(node.depth);
@@ -205,7 +228,7 @@ function isBoldOnly(children: PhrasingContent[]): boolean {
   );
 }
 
-function appendCode(lead: string, node: Code, cursor: number, ctx: Context, spec: ParagraphStyleSpec): number {
+function appendCode(lead: string, node: Code, cursor: number, ctx: Context, style: BlockStyle): number {
   // Internal newlines become in-paragraph line breaks so the whole block reads
   // as one shaded region rather than many separately-shaded paragraphs.
   const body = node.value.replaceAll("\n", LINE_BREAK);
@@ -222,7 +245,7 @@ function appendCode(lead: string, node: Code, cursor: number, ctx: Context, spec
           },
         ]
       : [];
-  return emitParagraph(`${lead}${body}`, styleRequests, cursor, ctx, spec);
+  return emitParagraph(`${lead}${body}`, styleRequests, cursor, ctx, style);
 }
 
 function appendInline(
@@ -230,7 +253,7 @@ function appendInline(
   inline: PhrasingContent[],
   cursor: number,
   ctx: Context,
-  spec: ParagraphStyleSpec,
+  style: BlockStyle,
 ): number {
   const base = cursor + lead.length;
   const content = inlineRuns(inline);
@@ -241,7 +264,7 @@ function appendInline(
       range: { startIndex: base + run.start, endIndex: base + run.end },
     },
   }));
-  return emitParagraph(`${lead}${content.text}`, styleRequests, cursor, ctx, spec);
+  return emitParagraph(`${lead}${content.text}`, styleRequests, cursor, ctx, style);
 }
 
 function emitParagraph(
@@ -249,7 +272,7 @@ function emitParagraph(
   inlineRequests: DocRequest[],
   cursor: number,
   ctx: Context,
-  spec: ParagraphStyleSpec,
+  style: BlockStyle,
 ): number {
   const text = ctx.reuseNewline ? body : `${body}\n`;
   const start = cursor;
@@ -259,18 +282,18 @@ function emitParagraph(
   if (text.length > 0) ctx.requests.push({ insertText: { text, location: { index: start } } });
   ctx.requests.push({
     updateParagraphStyle: {
-      paragraphStyle: spec.paragraphStyle,
-      fields: spec.fields,
+      paragraphStyle: style.paragraph.paragraphStyle,
+      fields: style.paragraph.fields,
       range: { startIndex: start, endIndex: paragraphEnd },
     },
   });
-  // Apply the base font over the text, then the specific runs, so run styles
-  // (bold, monospace code, ...) win in their sub-ranges.
+  // Apply the block's text style over the text, then the specific runs, so run
+  // styles (bold, monospace code, ...) win in their sub-ranges.
   if (body.length > 0) {
     ctx.requests.push({
       updateTextStyle: {
-        textStyle: bodyFontTextStyle,
-        fields: fieldMask(bodyFontTextStyle),
+        textStyle: style.text,
+        fields: fieldMask(style.text),
         range: { startIndex: start, endIndex: start + body.length },
       },
     });

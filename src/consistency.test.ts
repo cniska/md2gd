@@ -149,6 +149,52 @@ function tableElementStyling(requests: DocRequest[]): unknown[] {
     .concat([{ shape: { rows: last.rows, columns: last.columns } }]);
 }
 
+/** Each inserted text's paragraph alignment, keyed by the text. */
+function alignments(requests: DocRequest[]): Record<string, string | undefined> {
+  return Object.fromEntries(
+    requests.flatMap((r) => {
+      if (!("insertText" in r)) return [];
+      const at = r.insertText.location.index;
+      const paragraph = requests.find(
+        (p) => "updateParagraphStyle" in p && p.updateParagraphStyle.range.startIndex === at,
+      );
+      if (!paragraph || !("updateParagraphStyle" in paragraph)) return [];
+      return [[r.insertText.text.trim(), paragraph.updateParagraphStyle.paragraphStyle.alignment]];
+    }),
+  );
+}
+
+describe("table cells", () => {
+  test("a header cell renders its content as a body cell does, in bold", async () => {
+    const content = INLINE_ELEMENTS.paragraph?.trim();
+    const body = textElementStyling(await render(`| head |\n|---|\n| ${content} |\n`));
+    const header = textElementStyling(await render(`| ${content} |\n|---|\n`));
+    const baseFont = { weightedFontFamily: { fontFamily: "Montserrat" } };
+    const bolded = body.map((s) => {
+      const entry = s as { text?: object };
+      return entry.text && JSON.stringify(entry.text) === JSON.stringify(baseFont)
+        ? { ...entry, text: { ...baseFont, bold: true } }
+        : s;
+    });
+    expect(bolded).not.toEqual(body);
+    expect(header).toEqual(bolded);
+  });
+
+  test("a column's alignment applies to its header and body cells", async () => {
+    const markdown = "| a | b | c | d |\n|:--|:-:|--:|---|\n| e | f | g | h |\n";
+    expect(alignments(await render(markdown))).toEqual({
+      a: "START",
+      b: "CENTER",
+      c: "END",
+      d: undefined,
+      e: "START",
+      f: "CENTER",
+      g: "END",
+      h: undefined,
+    });
+  });
+});
+
 describe("every element renders the same in every context", () => {
   for (const [element, markdown] of Object.entries(TEXT_ELEMENTS)) {
     for (const [context, wrap] of Object.entries(CONTEXTS)) {
