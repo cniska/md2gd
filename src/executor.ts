@@ -8,7 +8,6 @@ import {
   normalParagraphStyle,
   preTableParagraphStyle,
   preTableTextStyle,
-  TABLE_CONTENT_WIDTH_PT,
 } from "./style";
 import { columnWidths, type TablePlan } from "./table";
 
@@ -91,7 +90,7 @@ async function fillSegments(client: DocsClient, documentId: string, segments: Se
       if (requests.length > 0) await client.batchUpdate(documentId, requests);
       cursor = endIndex;
     } else {
-      cursor = await insertTableSegment(client, documentId, segment.table, cursor, TABLE_CONTENT_WIDTH_PT);
+      cursor = await insertTableSegment(client, documentId, segment.table, cursor);
     }
   }
 }
@@ -121,16 +120,18 @@ async function insertTableSegment(
   documentId: string,
   plan: TablePlan,
   atIndex: number,
-  contentWidth: number,
 ): Promise<number> {
   // 1. Insert the empty table structure.
   await client.batchUpdate(documentId, [
     { insertTable: { rows: plan.rows, columns: plan.columns, location: { index: atIndex } } },
   ]);
 
-  // 2. Read back the real table start and per-cell content indices.
-  const located = locateTable(await client.getDocument(documentId), atIndex);
+  // 2. Read back the real table start and per-cell content indices, and the page
+  //    the columns must fit.
+  const doc = await client.getDocument(documentId);
+  const located = locateTable(doc, atIndex);
   if (!located) throw new Error("md2gd: inserted table not found in document");
+  const contentWidth = pageContentWidth(doc);
 
   // 3. Style the table and fill cells. Styling requests don't change indices;
   //    cell fills are ordered last-cell-first so each insertion never shifts a
@@ -147,6 +148,17 @@ async function insertTableSegment(
 
   // 4. The table's size changed with the fills; read the new end to continue after it.
   return bodyEndInsertIndex(await client.getDocument(documentId));
+}
+
+/**
+ * The width between the document's side margins. A document keeps the paper size
+ * of the account that created it (A4 or US Letter), so it is read, never assumed.
+ */
+function pageContentWidth(doc: DocumentResource): number {
+  const style = doc.documentStyle;
+  const page = style?.pageSize?.width?.magnitude;
+  if (page === undefined) throw new Error("md2gd: document has no page size to fit tables to");
+  return page - (style?.marginLeft?.magnitude ?? 0) - (style?.marginRight?.magnitude ?? 0);
 }
 
 interface LocatedTable {

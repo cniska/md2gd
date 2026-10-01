@@ -4,6 +4,13 @@ import { executeDocument, updateDocument } from "./executor";
 import { parseMarkdown } from "./parse";
 import { planDocument } from "./plan";
 
+/** A4 with one-inch side margins: 595.28 − 2 × 72 = 451.28pt of content width. */
+const A4 = {
+  pageSize: { width: { magnitude: 595.28, unit: "PT" as const }, height: { magnitude: 841.89, unit: "PT" as const } },
+  marginLeft: { magnitude: 72, unit: "PT" as const },
+  marginRight: { magnitude: 72, unit: "PT" as const },
+};
+
 /** Records calls in order; returns queued getDocument responses in order. */
 class MockClient {
   batches: DocRequest[][] = [];
@@ -56,6 +63,7 @@ describe("executeDocument", () => {
     // GET #1: the inserted 2x2 table with known cell content indices.
     // GET #2: end-of-body lookup after fills.
     const tableGet: DocumentResource = {
+      documentStyle: A4,
       body: {
         content: [
           {
@@ -98,11 +106,18 @@ describe("executeDocument", () => {
     // Highest-index cell (14) is filled before the lowest (3).
     expect(indices[0]).toBe(14);
     expect(indices.at(-1)).toBe(3);
+
+    // The columns fill the document's own page content width, never a fixed paper size.
+    const widths = styleFill.flatMap((r) =>
+      "updateTableColumnProperties" in r ? [r.updateTableColumnProperties.tableColumnProperties.width.magnitude] : [],
+    );
+    expect(Math.abs(widths.reduce((sum, w) => sum + w, 0) - 451.28)).toBeLessThanOrEqual(0.05);
   });
 
   test("the injected paragraph before a table is pinned to a thin spacer", async () => {
     // A table not at the body start (startIndex 5) has a preceding paragraph at [4,5).
     const tableGet: DocumentResource = {
+      documentStyle: A4,
       body: {
         content: [
           {

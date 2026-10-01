@@ -125,13 +125,6 @@ export function linkTextStyle(url: string): TextStyle {
   return { link: { url }, underline: true, foregroundColor: LINK_BLUE };
 }
 
-/**
- * Usable content width for a table, in points: US Letter (612pt) minus one-inch
- * (72pt) left and right margins. Column widths are distributed within this so
- * tables never overflow the page.
- */
-export const TABLE_CONTENT_WIDTH_PT = 468;
-
 /** Floor so a short-content column (e.g. a status column) never collapses. */
 export const MIN_COLUMN_WIDTH_PT = 54;
 

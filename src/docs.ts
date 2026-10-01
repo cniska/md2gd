@@ -220,9 +220,16 @@ export interface DocTableCell {
   content: DocStructuralElement[];
 }
 
+export interface DocumentStyle {
+  pageSize?: { width?: Dimension; height?: Dimension };
+  marginLeft?: Dimension;
+  marginRight?: Dimension;
+}
+
 export interface DocumentResource {
   documentId?: string;
   title?: string;
+  documentStyle?: DocumentStyle;
   body?: { content: DocStructuralElement[] };
 }
 
