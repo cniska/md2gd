@@ -64,8 +64,18 @@ const CONTEXTS: Record<string, (element: string) => string> = {
   "as a list item's later block": (e) => `- item\n\n${indent(e, "  ")}`,
 };
 
-const TEXT_ELEMENTS: Record<string, string> = {
+/** A GFM table cell holds a single line of inline content, so only inline elements can sit in one. */
+const INLINE_CONTEXTS: Record<string, (element: string) => string> = {
+  "in a table's body cell": (e) => `| head |\n|---|\n| ${e.trim()} |\n`,
+};
+
+const INLINE_ELEMENTS: Record<string, string> = {
   paragraph: "Element text with **bold** and `code`.\n",
+  caption: "**Element caption**\n",
+};
+
+const TEXT_ELEMENTS: Record<string, string> = {
+  ...INLINE_ELEMENTS,
   heading: "## Element heading\n",
   "code block": "```\nelement code\n```\n",
   "bulleted list": "- element one\n- element two\n",
@@ -147,6 +157,15 @@ describe("every element renders the same in every context", () => {
       test(`a ${element} ${context}`, async () => {
         const expected = textElementStyling(await render(markdown));
         expect(expected.length).toBeGreaterThan(0);
+        expect(textElementStyling(await render(wrap(markdown)))).toEqual(expected);
+      });
+    }
+  }
+
+  for (const [element, markdown] of Object.entries(INLINE_ELEMENTS)) {
+    for (const [context, wrap] of Object.entries(INLINE_CONTEXTS)) {
+      test(`a ${element} ${context}`, async () => {
+        const expected = textElementStyling(await render(markdown));
         expect(textElementStyling(await render(wrap(markdown)))).toEqual(expected);
       });
     }

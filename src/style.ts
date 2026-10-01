@@ -53,27 +53,13 @@ const HEADING_SPACING: Record<Heading["depth"], HeadingSpacing> = {
 };
 
 /**
- * A tight list's items sit closer together than body paragraphs so the list reads
- * as one grouped block rather than a stack of separate paragraphs. The space
- * *after* the whole list is restored separately (LIST_AFTER_SPACE) so it doesn't
- * butt against the next block.
+ * Space below a tight list's item text, closer than between body paragraphs so
+ * the list reads as one grouped block, as rendered Markdown's tight lists do.
  */
-export const listItemParagraphStyle: ParagraphStyleSpec = spec({
-  namedStyleType: "NORMAL_TEXT",
-  lineSpacing: BODY_LINE_SPACING,
-  spaceBelow: pt(2),
-});
+export const TIGHT_LIST_ITEM_SPACE: Dimension = pt(2);
 
 /** Space below a list's final item, matching body paragraph spacing. */
 export const LIST_AFTER_SPACE: Dimension = pt(8);
-
-/** A table cell's text: no spacing of its own, since the cell's padding already sets it off. */
-export const tableCellParagraphStyle: ParagraphStyleSpec = spec({
-  namedStyleType: "NORMAL_TEXT",
-  lineSpacing: BODY_LINE_SPACING,
-  spaceAbove: pt(0),
-  spaceBelow: pt(0),
-});
 
 /**
  * A bold-only line (e.g. `**Customer journey**` above a table) is a caption, not

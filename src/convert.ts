@@ -2,7 +2,7 @@ import type { Code, PhrasingContent, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
 import { type BulletPreset, type Dimension, type DocRequest, fieldMask, pt } from "./docs";
 import { inlineRuns, LINE_BREAK } from "./inline";
-import type { BlockContext, Leaf } from "./plan";
+import type { Leaf } from "./plan";
 import {
   AFTER_TABLE_SPACE,
   bodyFontTextStyle,
@@ -11,12 +11,11 @@ import {
   codeBlockTextStyle,
   headingParagraphStyle,
   LIST_AFTER_SPACE,
-  listItemParagraphStyle,
   listLaterBlockIndent,
   normalParagraphStyle,
   type ParagraphStyleSpec,
   spacedParagraphStyle,
-  tableCellParagraphStyle,
+  TIGHT_LIST_ITEM_SPACE,
 } from "./style";
 
 interface BulletSpec {
@@ -69,6 +68,7 @@ export function convertLeaves(
       flushBelow: last && options.endsContainer === true,
       afterTable: first && options.afterTable === true,
       endsList: leaf.context.list !== undefined && leaves[i + 1]?.context.list?.id !== leaf.context.list.id,
+      tightListText: leaf.context.list?.loose === false && leaf.node.type !== "heading" && leaf.node.type !== "code",
     };
     cursor = appendLeaf(leaf, cursor, ctx, spacing);
     const paragraphEnd = ctx.reuseNewline ? cursor + 1 : cursor;
@@ -127,22 +127,27 @@ interface Spacing {
   afterTable: boolean;
   /** Last of a list, whose tight items would otherwise butt against what follows. */
   endsList: boolean;
+  /** Text in a tight list, which rendered Markdown sets without paragraph margins. */
+  tightListText: boolean;
 }
 
 function spaceAbove(own: ParagraphStyleSpec, spacing: Spacing): Dimension | undefined {
   if (spacing.flushAbove) return pt(0);
   if (spacing.afterTable) return atLeast(own.paragraphStyle.spaceAbove, AFTER_TABLE_SPACE);
+  if (spacing.tightListText) return pt(0);
   return undefined;
 }
 
 function spaceBelow(own: ParagraphStyleSpec, spacing: Spacing): Dimension | undefined {
   if (spacing.flushBelow) return pt(0);
   if (spacing.endsList) return atLeast(own.paragraphStyle.spaceBelow, LIST_AFTER_SPACE);
+  if (spacing.tightListText) return TIGHT_LIST_ITEM_SPACE;
   return undefined;
 }
 
 function atLeast(own: Dimension | undefined, floor: Dimension): Dimension {
-  return (own?.magnitude ?? 0) >= floor.magnitude && own ? own : floor;
+  if (own === undefined) return floor;
+  return own.magnitude >= floor.magnitude ? own : floor;
 }
 
 function appendLeaf(leaf: Leaf, cursor: number, ctx: Context, spacing: Spacing): number {
@@ -157,7 +162,7 @@ function appendLeaf(leaf: Leaf, cursor: number, ctx: Context, spacing: Spacing):
   if (list?.first) lead = `${tabs}${list.prefix ?? ""}`;
   else if (list && !bulleted) lead = tabs;
   if (list?.first && bulleted && list.depth > 0) ctx.tabStrips.push({ index: cursor, tabs: list.depth });
-  const own = ownStyle(node, context);
+  const own = ownStyle(node);
   const spec = spacedParagraphStyle(own, spaceAbove(own, spacing), spaceBelow(own, spacing));
 
   switch (node.type) {
@@ -171,15 +176,14 @@ function appendLeaf(leaf: Leaf, cursor: number, ctx: Context, spacing: Spacing):
   }
 }
 
-function ownStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec {
+/** A block's own style, from what it is alone; where it sits only changes its spacing. */
+function ownStyle(node: RootContent): ParagraphStyleSpec {
   switch (node.type) {
     case "heading":
       return headingParagraphStyle(node.depth);
     case "code":
       return codeBlockParagraphStyle;
     default:
-      if (context.tableCell) return tableCellParagraphStyle;
-      if (context.list) return context.list.loose ? normalParagraphStyle : listItemParagraphStyle;
       return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle : normalParagraphStyle;
   }
 }

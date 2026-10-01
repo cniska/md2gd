@@ -171,6 +171,15 @@ describe("convert lists", () => {
     expect(below("- one\n\n- two\n\n- three\n")).toEqual([8, 8, 8]);
   });
 
+  test("a bold-only item in a tight list is a caption that keeps the list's tight spacing", () => {
+    const [first] = paragraphStyles(convert(parseMarkdown("- **Done**\n- next\n"))).map(
+      (s) => s.updateParagraphStyle.paragraphStyle,
+    );
+    expect(first?.keepWithNext).toBe(true);
+    expect(first?.spaceAbove?.magnitude).toBe(0);
+    expect(first?.spaceBelow?.magnitude).toBe(2);
+  });
+
   test("a nested list indents with a tab and is covered by one bullet request", () => {
     const reqs = convert(parseMarkdown("- a\n  - b\n"));
     // "a\n" then "\tb\n": the nested item carries one leading tab for depth.

@@ -390,8 +390,9 @@ function cellFillRequests(plan: TablePlan, cellIndices: number[][]): DocRequest[
     cellRow.flatMap((cell, col) => {
       const index = cellIndices[row]?.[col];
       if (index === undefined) return [];
-      const leaf: Leaf = { node: { type: "paragraph", children: cell.content }, context: { tableCell: true } };
-      return [{ index, requests: convertLeaves([leaf], index, { endsContainer: true }).requests }];
+      const leaf: Leaf = { node: { type: "paragraph", children: cell.content }, context: {} };
+      const fill = convertLeaves([leaf], index, { startsContainer: true, endsContainer: true });
+      return [{ index, requests: fill.requests }];
     }),
   );
 
