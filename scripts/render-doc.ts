@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
@@ -98,7 +98,8 @@ interface Args {
   passthrough: string[];
 }
 
-function parseCliArgs(argv: string[]): Args | null {
+/** The harness's own arguments; null when they don't parse, so usage is shown. */
+export function parseCliArgs(argv: string[]): Args | null {
   let file: string | undefined;
   let rerender = false;
   let keep = false;
@@ -108,9 +109,12 @@ function parseCliArgs(argv: string[]): Args | null {
     const arg = argv[i] as string;
     if (arg === "--rerender") rerender = true;
     else if (arg === "--keep") keep = true;
-    else if (arg === "--out") out = argv[++i] ?? out;
-    else if (arg === "--title" || arg === "--links") passthrough.push(arg, argv[++i] ?? "");
-    else if (!arg.startsWith("-") && !file) file = arg;
+    else if (arg === "--out" || arg === "--title" || arg === "--links") {
+      const value = argv[++i];
+      if (!value || value.startsWith("-")) return null;
+      if (arg === "--out") out = value;
+      else passthrough.push(arg, arg === "--links" ? resolve(value) : value);
+    } else if (!arg.startsWith("-") && !file) file = arg;
     else return null;
   }
   return file ? { file: resolve(file), rerender, keep, out: resolve(out), passthrough } : null;
@@ -207,6 +211,9 @@ async function main(): Promise<void> {
   const token = isExpired(stored, Date.now()) ? await refreshToken(client, stored.refreshToken, Date.now()) : stored;
   const folderId = await ensureScratchFolder(token.accessToken);
 
+  if (existsSync(args.out) && readdirSync(args.out).length > 0) {
+    throw new Error(`render: ${args.out} is not empty; pass a new --out so old evidence isn't mixed in`);
+  }
   mkdirSync(args.out, { recursive: true });
   const home = createIsolatedHome(secretJson, token);
   const log: string[] = [];

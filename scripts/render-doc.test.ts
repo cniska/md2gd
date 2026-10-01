@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { DocumentSchema, describeDocument } from "./render-doc";
+import { resolve } from "node:path";
+import { DocumentSchema, describeDocument, parseCliArgs } from "./render-doc";
 
 const run = (content: string) => ({ textRun: { content } });
 
@@ -37,5 +38,29 @@ describe("describeDocument", () => {
     expect(describeDocument(doc)).toBe(
       ["title: T", "[TABLE 1x2]", "  (0,0)", '    [NORMAL_TEXT] "A"', "  (0,1)", '    [NORMAL_TEXT] "B"'].join("\n"),
     );
+  });
+});
+
+describe("parseCliArgs", () => {
+  test("takes the file and passes title and links through, links made absolute", () => {
+    const args = parseCliArgs(["doc.md", "--title", "T", "--links", "map.json", "--rerender"]);
+    expect(args).toMatchObject({
+      file: resolve("doc.md"),
+      rerender: true,
+      keep: false,
+      passthrough: ["--title", "T", "--links", resolve("map.json")],
+    });
+  });
+
+  test("rejects a flag whose value is missing", () => {
+    expect(parseCliArgs(["doc.md", "--title"])).toBeNull();
+    expect(parseCliArgs(["doc.md", "--out", "--keep"])).toBeNull();
+    expect(parseCliArgs(["doc.md", "--links", ""])).toBeNull();
+  });
+
+  test("rejects a second file or an unknown flag", () => {
+    expect(parseCliArgs(["a.md", "b.md"])).toBeNull();
+    expect(parseCliArgs(["a.md", "--update"])).toBeNull();
+    expect(parseCliArgs([])).toBeNull();
   });
 });
