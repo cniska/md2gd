@@ -123,19 +123,22 @@ export function planDocument(root: Root): Segment[] {
       const depth = parent ? parent.depth + 1 : 0;
       // The outermost list decides the preset for the whole nested range; nested
       // lists inherit it, and a task list's range has none.
-      const preset = parent ? parent.preset : task ? undefined : bulletPreset(list);
+      const preset = parent ? parent.preset : outermostPreset(list, task);
+      // CommonMark makes a list loose when a blank line separates its items or
+      // the blocks inside any one item.
+      const loose = list.spread === true || list.children.some((item) => item.spread === true);
       for (const item of list.children) {
         const walk: ListWalk = {
           id,
           depth,
           preset,
-          loose: list.spread === true,
+          loose,
           item: { prefix: itemPrefix(item, task), started: false },
         };
         // An item's marker rides on a paragraph, so an empty item, or one that
-        // opens with a table or quote, gets an empty first one to carry it.
+        // opens with a table, quote or list, gets an empty first one to carry it.
         const opener = item.children[0]?.type;
-        const needsMarker = opener === undefined || opener === "table" || opener === "blockquote";
+        const needsMarker = opener === undefined || opener === "table" || opener === "blockquote" || opener === "list";
         const children: RootContent[] = needsMarker
           ? [{ type: "paragraph", children: [] }, ...item.children]
           : item.children;
@@ -189,11 +192,8 @@ function itemPrefix(item: ListItem, taskList: boolean): string | undefined {
   return taskList ? "• " : undefined;
 }
 
-// Known limitation: one preset applies to the whole (possibly nested) list, so a
-// list of one type nested inside another still renders with the outer preset's
-// per-level glyphs. Correct per-level presets for mixed nesting would need
-// separate bullet requests per contiguous same-type run. The target documents
-// use flat single-type lists, so this is documented rather than implemented.
-function bulletPreset(list: List): BulletPreset {
+/** The preset for an outermost list's whole nested range; a task list's items carry glyphs instead. */
+function outermostPreset(list: List, task: boolean): BulletPreset | undefined {
+  if (task) return undefined;
   return list.ordered ? "NUMBERED_DECIMAL_ALPHA_ROMAN" : "BULLET_DISC_CIRCLE_SQUARE";
 }

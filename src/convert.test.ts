@@ -169,6 +169,13 @@ describe("convert lists", () => {
       );
     expect(below("- one\n- two\n- three\n")).toEqual([2, 2, 8]);
     expect(below("- one\n\n- two\n\n- three\n")).toEqual([8, 8, 8]);
+    // A blank line inside an item makes the whole list loose too, per CommonMark.
+    expect(below("- one\n\n  more\n- two\n")).toEqual([8, 8, 8]);
+  });
+
+  test("an item that opens with a nested list keeps an empty first line to carry its marker", () => {
+    const reqs = convert(parseMarkdown("- - nested\n- next\n"));
+    expect(insertedText(reqs)).toBe("\n\tnested\nnext\n");
   });
 
   test("a bold-only item in a tight list is a caption that keeps the list's tight spacing", () => {
