@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { buildAuthUrl, createPkce, exchangeCode, type FetchFn, parseClientSecret, refreshToken } from "./oauth";
+import type { FetchFn } from "./http";
+import { buildAuthUrl, createPkce, exchangeCode, parseClientSecret, refreshToken } from "./oauth";
 
 const CLIENT = { clientId: "cid", clientSecret: "secret" };
 

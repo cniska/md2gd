@@ -1,7 +1,7 @@
 import { DEFAULT_FOLDER_NAME } from "./config";
 import type { DocRequest, DocumentResource } from "./docs";
 import type { DocsClient } from "./executor";
-import type { FetchFn } from "./oauth";
+import { type FetchFn, fetchWithRetry, type Sleep } from "./http";
 
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
@@ -11,6 +11,7 @@ const DOC_MIME = "application/vnd.google-apps.document";
 export interface GoogleClientOptions {
   getToken: () => Promise<string>;
   fetchFn?: FetchFn;
+  sleep?: Sleep;
   folderName?: string;
 }
 
@@ -45,11 +46,13 @@ async function errorMessage(res: Response): Promise<string> {
 export class GoogleDocsClient implements DocsClient {
   private readonly getToken: () => Promise<string>;
   private readonly fetchFn: FetchFn;
+  private readonly sleep: Sleep | undefined;
   private readonly folderName: string;
 
   constructor(options: GoogleClientOptions) {
     this.getToken = options.getToken;
     this.fetchFn = options.fetchFn ?? fetch;
+    this.sleep = options.sleep;
     this.folderName = options.folderName ?? DEFAULT_FOLDER_NAME;
   }
 
@@ -132,7 +135,8 @@ export class GoogleDocsClient implements DocsClient {
     };
     if (body !== undefined) init.body = JSON.stringify(body);
 
-    const res = await this.fetchFn(url, init);
+    const res = await fetchWithRetry(this.fetchFn, url, init, this.sleep);
+    if (res.status === 429) throw new Error("md2gd: Google API rate limit reached — wait a minute and try again");
     if (!res.ok) throw new Error(`md2gd: Google API ${method} failed (${res.status}): ${await errorMessage(res)}`);
     return res.json();
   }

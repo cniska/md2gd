@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SCOPES } from "./config";
+import { type FetchFn, fetchWithRetry } from "./http";
 import { isExpired, loadToken, type StoredToken, saveToken } from "./tokens";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -14,8 +15,6 @@ export interface ClientSecret {
   clientId: string;
   clientSecret: string;
 }
-
-export type FetchFn = (url: string, init: RequestInit) => Promise<Response>;
 
 const TokenResponseSchema = z.object({
   access_token: z.string(),
@@ -70,7 +69,7 @@ export async function createPkce(): Promise<{ verifier: string; challenge: strin
 }
 
 async function postToken(fetchFn: FetchFn, body: URLSearchParams): Promise<z.infer<typeof TokenResponseSchema>> {
-  const res = await fetchFn(TOKEN_ENDPOINT, {
+  const res = await fetchWithRetry(fetchFn, TOKEN_ENDPOINT, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: body.toString(),

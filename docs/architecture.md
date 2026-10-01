@@ -78,6 +78,10 @@ A table cannot be indented, so a table or quote inside a list item sits at its c
 
 The update is not atomic and comments anchored to cleared ranges orphan. Both are accepted limitations for the single-user regenerate loop, documented rather than engineered around (SPEC FR-43).
 
+## Retries
+
+Every Google request, the OAuth token calls included, goes through `fetchWithRetry` (`http.ts`). Rate limiting (429), server errors (500, 502, 503, 504), and dropped connections are retried up to four attempts with exponential backoff from one second, honouring a `Retry-After` header up to 30 seconds (SPEC NF-5). A rate-limited request is rejected before it applies, so its retry cannot double a write. Once retries run out, a lasting 429 becomes a "rate limit reached" message and a lasting connection failure a "cannot reach Google" one, never a raw error (SPEC NF-3).
+
 ## Drive and Docs identity
 
 A document is created directly inside its parent folder via Drive, not via the Docs API's create-then-move. A Drive file's id *is* the Docs document id, so creating the file with the folder as parent avoids the add-parent-to-a-rooted-file move, which fails under Drive's single-parent model. The parent is `--folder` if given, else md2gd's own default folder (SPEC FR-25, FR-27b). The same identity lets the title be renamed with a Drive `PATCH`.
@@ -111,6 +115,7 @@ The scope is `drive` (which also authorises the Docs API's create/batchUpdate, s
 | `style.ts` | Central typographic style table |
 | `executor.ts` | Create/clear/fill orchestration, two-phase tables |
 | `google.ts` | Live Docs + Drive REST client (`DocsClient`) |
+| `http.ts` | Retry with backoff for every Google request |
 | `oauth.ts`, `tokens.ts`, `init.ts` | OAuth flow, token cache, one-time setup |
 | `config.ts`, `mapping.ts` | Config paths and the file→doc mapping |
 | `pipeline.ts` | Read file, derive title, resolve update target |

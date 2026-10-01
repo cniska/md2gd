@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { documentUrl, GoogleDocsClient } from "./google";
-import type { FetchFn } from "./oauth";
+import type { FetchFn } from "./http";
 
 interface Call {
   method: string;
@@ -136,5 +136,26 @@ describe("GoogleDocsClient.batchUpdate", () => {
     const fetchFn: FetchFn = () => Promise.resolve(new Response("nope", { status: 403 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     await expect(client.batchUpdate("d", [])).rejects.toThrow(/failed \(403\)/);
+  });
+});
+
+describe("GoogleDocsClient retries", () => {
+  const noWait = () => Promise.resolve();
+
+  test("retries a transient server error and carries on", async () => {
+    let call = 0;
+    const fetchFn: FetchFn = () =>
+      Promise.resolve(call++ === 0 ? new Response("busy", { status: 503 }) : new Response("{}", { status: 200 }));
+    const client = new GoogleDocsClient({ getToken: token, fetchFn, sleep: noWait });
+    await client.batchUpdate("doc", []);
+    expect(call).toBe(2);
+  });
+
+  test("reports lasting rate limiting as a clear message, not a raw API error", async () => {
+    const fetchFn: FetchFn = () => Promise.resolve(new Response("{}", { status: 429 }));
+    const client = new GoogleDocsClient({ getToken: token, fetchFn, sleep: noWait });
+    await expect(client.batchUpdate("doc", [])).rejects.toThrow(
+      "md2gd: Google API rate limit reached — wait a minute and try again",
+    );
   });
 });

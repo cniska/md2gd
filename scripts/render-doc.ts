@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { CLIENT_SECRET_PATH, TOKEN_PATH } from "../src/config";
+import { fetchWithRetry } from "../src/http";
 import { type ClientSecret, parseClientSecret, refreshToken } from "../src/oauth";
 import { parseDocId } from "../src/pipeline";
 import { isExpired, type StoredToken, StoredTokenSchema } from "../src/tokens";
@@ -137,7 +138,7 @@ async function google(token: string, method: string, url: string, body?: unknown
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
   };
   if (body !== undefined) init.body = JSON.stringify(body);
-  const res = await fetch(url, init);
+  const res = await fetchWithRetry(fetch, url, init);
   if (!res.ok) throw new Error(`render: ${method} ${url} failed (${res.status}): ${(await res.text()).slice(0, 300)}`);
   return res;
 }
