@@ -1,6 +1,8 @@
-import { describe, expect, test } from "bun:test";
-import { resolve } from "node:path";
-import { DocumentSchema, describeDocument, parseCliArgs } from "./render-doc";
+import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { type Cleanup, cleanUp, DocumentSchema, describeDocument, parseCliArgs } from "./render-doc";
 
 const run = (content: string) => ({ textRun: { content } });
 
@@ -62,5 +64,76 @@ describe("parseCliArgs", () => {
     expect(parseCliArgs(["a.md", "b.md"])).toBeNull();
     expect(parseCliArgs(["a.md", "--update"])).toBeNull();
     expect(parseCliArgs([])).toBeNull();
+  });
+});
+
+describe("cleanUp", () => {
+  const dirs: string[] = [];
+  afterEach(() => {
+    for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  function run(overrides: Partial<Cleanup> = {}): Cleanup & { trashed: string[]; warnings: string[] } {
+    const trashed: string[] = [];
+    const warnings: string[] = [];
+    const dir = mkdtempSync(join(tmpdir(), "md2gd-cleanup-test-"));
+    const home = mkdtempSync(join(tmpdir(), "md2gd-cleanup-home-"));
+    dirs.push(dir, home);
+    return {
+      trashed,
+      warnings,
+      home,
+      logPath: join(dir, "cli.log"),
+      log: ["$ md2gd doc.md"],
+      keep: false,
+      findLeftovers: () => Promise.resolve(["left-1", "left-2"]),
+      trash: (id) => {
+        trashed.push(id);
+        return Promise.resolve();
+      },
+      warn: (message) => warnings.push(message),
+      ...overrides,
+    };
+  }
+
+  test("deletes the credentials copy, writes the log, and trashes the run's doc", async () => {
+    const r = run({ documentId: "doc-1" });
+    await cleanUp(r);
+    expect(existsSync(r.home as string)).toBe(false);
+    expect(readFileSync(r.logPath, "utf8")).toBe("$ md2gd doc.md\n");
+    expect(r.trashed).toEqual(["doc-1"]);
+  });
+
+  test("trashes the docs a run left when it failed before printing its URL", async () => {
+    const r = run();
+    await cleanUp(r);
+    expect(r.trashed).toEqual(["left-1", "left-2"]);
+  });
+
+  test("keeps every doc when asked to", async () => {
+    const r = run({ documentId: "doc-1", keep: true });
+    await cleanUp(r);
+    expect(r.trashed).toEqual([]);
+  });
+
+  test("still deletes the credentials and trashes when the log can't be written", async () => {
+    const r = run({ documentId: "doc-1", logPath: "/nonexistent-dir/cli.log" });
+    await cleanUp(r);
+    expect(existsSync(r.home as string)).toBe(false);
+    expect(r.trashed).toEqual(["doc-1"]);
+    expect(r.warnings[0]).toStartWith("render: could not write cli.log");
+  });
+
+  test("warns instead of throwing when trashing fails, and tries every doc", async () => {
+    const tried: string[] = [];
+    const r = run({
+      trash: (id) => {
+        tried.push(id);
+        return id === "left-1" ? Promise.reject(new Error("403")) : Promise.resolve();
+      },
+    });
+    await cleanUp(r);
+    expect(tried).toEqual(["left-1", "left-2"]);
+    expect(r.warnings).toEqual(["render: could not trash left-1: 403"]);
   });
 });

@@ -24,6 +24,9 @@ Credentials: MD2GD_CLIENT_SECRET_JSON and MD2GD_TOKEN_JSON if set, else the stor
 const SCRATCH_FOLDER = "md2gd-verify";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
+const DOC_MIME = "application/vnd.google-apps.document";
+const REPO_ROOT = resolve(import.meta.dir, "..");
+const CLI_TIMEOUT_MS = 10 * 60_000;
 
 const TextRunSchema = z.object({ content: z.string().optional() }).passthrough();
 const ParagraphSchema = z
@@ -166,30 +169,82 @@ async function ensureScratchFolder(token: string): Promise<string> {
  */
 function createIsolatedHome(secretJson: string, token: StoredToken): string {
   const home = mkdtempSync(join(tmpdir(), "md2gd-render-"));
-  const configDir = process.platform === "darwin" ? join(home, ".md2gd") : join(home, ".config", "md2gd");
-  mkdirSync(configDir, { recursive: true, mode: 0o700 });
-  writeFileSync(join(configDir, "client_secret.json"), secretJson, { mode: 0o600 });
-  writeFileSync(join(configDir, "token.json"), JSON.stringify(token), { mode: 0o600 });
-  chmodSync(home, 0o700);
-  return home;
+  try {
+    const configDir = process.platform === "darwin" ? join(home, ".md2gd") : join(home, ".config", "md2gd");
+    mkdirSync(configDir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(configDir, "client_secret.json"), secretJson, { mode: 0o600 });
+    writeFileSync(join(configDir, "token.json"), JSON.stringify(token), { mode: 0o600 });
+    chmodSync(home, 0o700);
+    return home;
+  } catch (error) {
+    rmSync(home, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function runCli(home: string, cliArgs: string[], log: string[]): string {
-  const result = spawnSync("bun", ["run", "src/cli.ts", ...cliArgs], {
+  const result = spawnSync(process.execPath, ["run", join(REPO_ROOT, "src", "cli.ts"), ...cliArgs], {
+    cwd: REPO_ROOT,
     env: { ...process.env, HOME: home, XDG_CONFIG_HOME: join(home, ".config") },
     encoding: "utf8",
+    timeout: CLI_TIMEOUT_MS,
   });
   log.push(
     `$ md2gd ${cliArgs.join(" ")}`,
-    `exit: ${result.status}`,
+    `exit: ${result.status ?? result.signal}`,
     `stdout: ${result.stdout}`,
     `stderr: ${result.stderr}`,
   );
+  if (result.status === null) throw new Error(`render: CLI stopped (${result.signal ?? "timed out"})`);
   if (result.status !== 0) throw new Error(`render: CLI exited ${result.status}: ${result.stderr.trim()}`);
   const url = result.stdout.trim().split("\n").at(-1) ?? "";
   if (!url.startsWith("https://docs.google.com/document/d/"))
     throw new Error(`render: unexpected stdout: ${result.stdout}`);
   return url;
+}
+
+/** Docs in the scratch folder made since `since`: what a run that failed before printing its URL left behind. */
+async function createdSince(token: string, folderId: string, since: Date): Promise<string[]> {
+  // A minute's margin covers clock drift between this machine and Drive.
+  const after = new Date(since.getTime() - 60_000).toISOString();
+  const q = `'${folderId}' in parents and createdTime > '${after}' and mimeType='${DOC_MIME}' and trashed=false`;
+  const found = z
+    .object({ files: z.array(z.object({ id: z.string() })) })
+    .parse(await (await google(token, "GET", `${DRIVE_API}?q=${encodeURIComponent(q)}&fields=files(id)`)).json());
+  return found.files.map((file) => file.id);
+}
+
+export interface Cleanup {
+  home?: string;
+  logPath: string;
+  log: string[];
+  documentId?: string;
+  keep: boolean;
+  findLeftovers: () => Promise<string[]>;
+  trash: (documentId: string) => Promise<void>;
+  warn: (message: string) => void;
+}
+
+/**
+ * Undo a run, whatever state it stopped in. Each step runs on its own and only
+ * warns when it fails, so one failure neither skips the rest nor replaces the
+ * run's own error; the credentials copy goes first.
+ */
+export async function cleanUp(run: Cleanup): Promise<void> {
+  const step = async (what: string, action: () => unknown): Promise<void> => {
+    try {
+      await action();
+    } catch (error) {
+      run.warn(`render: could not ${what}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+  const { home } = run;
+  if (home) await step("delete the temporary credentials", () => rmSync(home, { recursive: true, force: true }));
+  await step("write cli.log", () => writeFileSync(run.logPath, `${run.log.join("\n")}\n`));
+  if (run.keep) return;
+  let ids = run.documentId ? [run.documentId] : [];
+  if (!run.documentId) await step("find docs the failed run left", async () => (ids = await run.findLeftovers()));
+  for (const id of ids) await step(`trash ${id}`, () => run.trash(id));
 }
 
 function renderPages(pdfPath: string, outDir: string): string[] {
@@ -206,19 +261,27 @@ async function main(): Promise<void> {
     process.exitCode = 1;
     return;
   }
+  if (existsSync(args.out) && readdirSync(args.out).length > 0) {
+    throw new Error(`render: ${args.out} is not empty; pass a new --out so old evidence isn't mixed in`);
+  }
 
   const { secretJson, client, token: stored } = await loadCredentials();
   const token = isExpired(stored, Date.now()) ? await refreshToken(client, stored.refreshToken, Date.now()) : stored;
   const folderId = await ensureScratchFolder(token.accessToken);
-
-  if (existsSync(args.out) && readdirSync(args.out).length > 0) {
-    throw new Error(`render: ${args.out} is not empty; pass a new --out so old evidence isn't mixed in`);
-  }
   mkdirSync(args.out, { recursive: true });
-  const home = createIsolatedHome(secretJson, token);
+
+  const startedAt = new Date();
   const log: string[] = [];
+  let home: string | undefined;
   let documentId: string | undefined;
+  // Ctrl-C reaches the CLI too, which stops it; staying alive lets cleanup run.
+  let interrupted = false;
+  const onInterrupt = () => {
+    interrupted = true;
+  };
+  process.on("SIGINT", onInterrupt);
   try {
+    home = createIsolatedHome(secretJson, token);
     const url = runCli(home, [args.file, "--folder", folderId, ...args.passthrough], log);
     documentId = parseDocId(url);
     if (args.rerender) runCli(home, [args.file, "--update", documentId, ...args.passthrough], log);
@@ -242,12 +305,21 @@ async function main(): Promise<void> {
       ].join("\n"),
     );
   } finally {
-    writeFileSync(join(args.out, "cli.log"), `${log.join("\n")}\n`);
-    rmSync(home, { recursive: true, force: true });
-    if (documentId && !args.keep) {
-      await google(token.accessToken, "PATCH", `${DRIVE_API}/${documentId}?supportsAllDrives=true`, { trashed: true });
-      process.stdout.write(`trashed: ${documentId}\n`);
-    }
+    process.off("SIGINT", onInterrupt);
+    await cleanUp({
+      home,
+      logPath: join(args.out, "cli.log"),
+      log,
+      documentId,
+      keep: args.keep,
+      findLeftovers: () => createdSince(token.accessToken, folderId, startedAt),
+      trash: async (id) => {
+        await google(token.accessToken, "PATCH", `${DRIVE_API}/${id}?supportsAllDrives=true`, { trashed: true });
+        process.stdout.write(`trashed: ${id}\n`);
+      },
+      warn: (message) => process.stderr.write(`${message}\n`),
+    });
+    if (interrupted) process.exitCode = 130;
   }
 }
 
