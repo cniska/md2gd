@@ -1,13 +1,6 @@
 import type { Code, PhrasingContent, Root, RootContent } from "mdast";
 import { toString as mdastToString } from "mdast-util-to-string";
-import {
-  BODY_START_INDEX,
-  type BulletPreset,
-  type Dimension,
-  type DocRequest,
-  fieldMask,
-  type UpdateParagraphStyleRequest,
-} from "./docs";
+import { BODY_START_INDEX, type BulletPreset, type Dimension, type DocRequest, fieldMask, pt } from "./docs";
 import { inlineRuns, LINE_BREAK } from "./inline";
 import { type BlockContext, type Leaf, planDocument } from "./plan";
 import {
@@ -22,6 +15,7 @@ import {
   listLaterBlockIndent,
   normalParagraphStyle,
   type ParagraphStyleSpec,
+  spacedParagraphStyle,
   tableCellParagraphStyle,
 } from "./style";
 
@@ -74,7 +68,7 @@ export function convert(root: Root): DocRequest[] {
 export function convertLeaves(
   leaves: Leaf[],
   startIndex: number,
-  options: { afterTable?: boolean; endsContainer?: boolean } = {},
+  options: { afterTable?: boolean; startsContainer?: boolean; endsContainer?: boolean } = {},
 ): { requests: DocRequest[]; endIndex: number } {
   const ctx: Context = { requests: [], bullets: [], tabStrips: [], reuseNewline: false };
   let cursor = startIndex;
@@ -83,11 +77,18 @@ export function convertLeaves(
 
   for (const [i, leaf] of leaves.entries()) {
     const start = cursor;
-    const requestStart = ctx.requests.length;
+    const first = i === 0;
+    const last = i === leaves.length - 1;
     // A table cell always keeps one paragraph of its own, so the last block of a
     // cell is written into it rather than leaving an empty line below.
-    ctx.reuseNewline = options.endsContainer === true && i === leaves.length - 1;
-    cursor = appendLeaf(leaf, cursor, ctx);
+    ctx.reuseNewline = options.endsContainer === true && last;
+    const spacing: Spacing = {
+      flushAbove: first && options.startsContainer === true,
+      flushBelow: last && options.endsContainer === true,
+      afterTable: first && options.afterTable === true,
+      endsList: leaf.context.list !== undefined && leaves[i + 1]?.context.list?.id !== leaf.context.list.id,
+    };
+    cursor = appendLeaf(leaf, cursor, ctx, spacing);
     const paragraphEnd = ctx.reuseNewline ? cursor + 1 : cursor;
 
     // A list's blocks share one bullet range, so Docs counts the list as one;
@@ -104,17 +105,7 @@ export function convertLeaves(
     } else {
       openRange = undefined;
     }
-
-    // Items are tightly spaced; restore normal space below a list's final block
-    // so the list doesn't butt against what follows.
-    if (list && leaves[i + 1]?.context.list?.id !== list.id) {
-      ensureSpaceBelowOnLast(ctx.requests, requestStart, LIST_AFTER_SPACE);
-    }
   }
-
-  // A run following a table needs space above its first block, since a table
-  // carries no space below and a plain paragraph no space above.
-  if (options.afterTable) ensureSpaceAbove(ctx.requests, AFTER_TABLE_SPACE);
 
   // Bulleting strips the leading tabs used to signal nesting, which shifts every
   // index after the list. Emitting bullet requests last and in reverse document
@@ -144,7 +135,35 @@ export function convertLeaves(
   return { requests: ctx.requests, endIndex: cursor - stripped(cursor) };
 }
 
-function appendLeaf(leaf: Leaf, cursor: number, ctx: Context): number {
+/** Where a block sits among its neighbors, which decides the space around it. */
+interface Spacing {
+  /** First in a container: flush against its top edge, as rendered Markdown's first child is. */
+  flushAbove: boolean;
+  /** Last in a container: flush against its bottom edge. */
+  flushBelow: boolean;
+  /** First after a table, which carries no space below itself. */
+  afterTable: boolean;
+  /** Last of a list, whose tight items would otherwise butt against what follows. */
+  endsList: boolean;
+}
+
+function spaceAbove(own: ParagraphStyleSpec, spacing: Spacing): Dimension | undefined {
+  if (spacing.flushAbove) return pt(0);
+  if (spacing.afterTable) return atLeast(own.paragraphStyle.spaceAbove, AFTER_TABLE_SPACE);
+  return undefined;
+}
+
+function spaceBelow(own: ParagraphStyleSpec, spacing: Spacing): Dimension | undefined {
+  if (spacing.flushBelow) return pt(0);
+  if (spacing.endsList) return atLeast(own.paragraphStyle.spaceBelow, LIST_AFTER_SPACE);
+  return undefined;
+}
+
+function atLeast(own: Dimension | undefined, floor: Dimension): Dimension {
+  return (own?.magnitude ?? 0) >= floor.magnitude && own ? own : floor;
+}
+
+function appendLeaf(leaf: Leaf, cursor: number, ctx: Context, spacing: Spacing): number {
   const { node, context } = leaf;
   const list = context.list;
   // An item's first block carries its marker: leading tabs that set its nesting
@@ -156,7 +175,8 @@ function appendLeaf(leaf: Leaf, cursor: number, ctx: Context): number {
   if (list?.first) lead = `${tabs}${list.prefix ?? ""}`;
   else if (list && !bulleted) lead = tabs;
   if (list?.first && bulleted && list.depth > 0) ctx.tabStrips.push({ index: cursor, tabs: list.depth });
-  const spec = ownStyle(node, context);
+  const own = ownStyle(node, context);
+  const spec = spacedParagraphStyle(own, spaceAbove(own, spacing), spaceBelow(own, spacing));
 
   switch (node.type) {
     case "heading":
@@ -177,44 +197,8 @@ function ownStyle(node: RootContent, context: BlockContext): ParagraphStyleSpec 
       return codeBlockParagraphStyle;
     default:
       if (context.tableCell) return tableCellParagraphStyle;
-      if (context.list) return listItemParagraphStyle();
+      if (context.list) return context.list.loose ? normalParagraphStyle() : listItemParagraphStyle();
       return node.type === "paragraph" && isBoldOnly(node.children) ? captionParagraphStyle() : normalParagraphStyle();
-  }
-}
-
-/**
- * Raise the first paragraph's space-above to at least `floor`, cloning the style
- * so the shared spec object is never mutated. A first block that already has more
- * (e.g. a heading or caption) is left untouched.
- */
-function ensureSpaceAbove(requests: DocRequest[], floor: Dimension): void {
-  const first = requests.find((r): r is UpdateParagraphStyleRequest => "updateParagraphStyle" in r);
-  if (!first) return;
-  const style = first.updateParagraphStyle.paragraphStyle;
-  if ((style.spaceAbove?.magnitude ?? 0) >= floor.magnitude) return;
-  first.updateParagraphStyle.paragraphStyle = { ...style, spaceAbove: floor };
-  if (!first.updateParagraphStyle.fields.split(",").includes("spaceAbove")) {
-    first.updateParagraphStyle.fields = `${first.updateParagraphStyle.fields},spaceAbove`;
-  }
-}
-
-/**
- * Raise the space-below of the last paragraph styled since `fromIndex` to at
- * least `floor` (cloning the shared spec). Used to restore normal spacing after
- * a tightly-spaced list.
- */
-function ensureSpaceBelowOnLast(requests: DocRequest[], fromIndex: number, floor: Dimension): void {
-  for (let i = requests.length - 1; i >= fromIndex; i--) {
-    const request = requests[i];
-    if (!request || !("updateParagraphStyle" in request)) continue;
-    const style = request.updateParagraphStyle.paragraphStyle;
-    if ((style.spaceBelow?.magnitude ?? 0) < floor.magnitude) {
-      request.updateParagraphStyle.paragraphStyle = { ...style, spaceBelow: floor };
-      if (!request.updateParagraphStyle.fields.split(",").includes("spaceBelow")) {
-        request.updateParagraphStyle.fields = `${request.updateParagraphStyle.fields},spaceBelow`;
-      }
-    }
-    return;
   }
 }
 

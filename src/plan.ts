@@ -20,6 +20,8 @@ export interface ListPlacement {
   depth: number;
   /** The outermost list's preset; undefined for a task list, whose items carry a glyph instead. */
   preset?: BulletPreset;
+  /** The item's own list is loose (blank lines between items), so its items space like paragraphs. */
+  loose: boolean;
   /** True on an item's first block, which carries the item's marker. */
   first: boolean;
   /** The glyph leading a task-list item's first block. */
@@ -67,6 +69,7 @@ interface ListWalk {
   id: number;
   depth: number;
   preset?: BulletPreset;
+  loose: boolean;
   item: ItemState;
 }
 
@@ -99,7 +102,13 @@ export function planDocument(root: Root): Segment[] {
       }
       const first = !list.item.started;
       list.item.started = true;
-      const placement: ListPlacement = { id: list.id, depth: list.depth, preset: list.preset, first };
+      const placement: ListPlacement = {
+        id: list.id,
+        depth: list.depth,
+        preset: list.preset,
+        loose: list.loose,
+        first,
+      };
       if (first && list.item.prefix) placement.prefix = list.item.prefix;
       leaves.push({ node, context: { list: placement } });
     };
@@ -118,7 +127,13 @@ export function planDocument(root: Root): Segment[] {
       // lists inherit it, and a task list's range has none.
       const preset = parent ? parent.preset : task ? undefined : bulletPreset(list);
       for (const item of list.children) {
-        const walk: ListWalk = { id, depth, preset, item: { prefix: itemPrefix(item, task), started: false } };
+        const walk: ListWalk = {
+          id,
+          depth,
+          preset,
+          loose: list.spread === true,
+          item: { prefix: itemPrefix(item, task), started: false },
+        };
         // An item's marker rides on a paragraph, so an empty item, or one that
         // opens with a table or quote, gets an empty first one to carry it.
         const opener = item.children[0]?.type;

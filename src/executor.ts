@@ -118,6 +118,7 @@ async function fillContainer(
       case "linear": {
         const { requests, endIndex } = convertLeaves(segment.leaves, cursor, {
           afterTable: segment.afterTable,
+          startsContainer: container.isCell && i === 0,
           endsContainer: container.isCell && i === segments.length - 1,
         });
         if (requests.length > 0) await client.batchUpdate(documentId, requests);

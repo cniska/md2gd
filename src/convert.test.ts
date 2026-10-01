@@ -150,6 +150,15 @@ describe("convert lists", () => {
     expect(below[below.length - 1]).toBeGreaterThanOrEqual(8);
   });
 
+  test("a loose list spaces its items like paragraphs, as rendered Markdown does", () => {
+    const below = (md: string) =>
+      paragraphStyles(convert(parseMarkdown(md))).map(
+        (s) => s.updateParagraphStyle.paragraphStyle.spaceBelow?.magnitude,
+      );
+    expect(below("- one\n- two\n- three\n")).toEqual([2, 2, 8]);
+    expect(below("- one\n\n- two\n\n- three\n")).toEqual([8, 8, 8]);
+  });
+
   test("a nested list indents with a tab and is covered by one bullet request", () => {
     const reqs = convert(parseMarkdown("- a\n  - b\n"));
     // "a\n" then "\tb\n": the nested item carries one leading tab for depth.
@@ -324,6 +333,17 @@ describe("convert typography and styling coverage", () => {
     const style = first && "updateParagraphStyle" in first ? first.updateParagraphStyle : undefined;
     // HEADING_2's 16pt is not reduced to the 10pt floor.
     expect(style?.paragraphStyle.spaceAbove?.magnitude).toBeGreaterThan(10);
+  });
+
+  test("a container's first and last blocks sit flush against its edges, as rendered Markdown's do", () => {
+    const { requests } = convertLeaves(leavesOf("## Title\n\nMiddle.\n\n```\ncode\n```\n"), 4, {
+      startsContainer: true,
+      endsContainer: true,
+    });
+    const styles = paragraphStyles(requests).map((s) => s.updateParagraphStyle.paragraphStyle);
+    expect(styles[0]?.spaceAbove?.magnitude).toBe(0);
+    expect(styles[1]?.spaceBelow?.magnitude).toBe(8);
+    expect(styles.at(-1)?.spaceBelow?.magnitude).toBe(0);
   });
 
   test("headings carry more space above than below so they group with their content", () => {

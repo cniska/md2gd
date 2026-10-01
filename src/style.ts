@@ -189,6 +189,19 @@ export function listLaterBlockIndent(depth: number): ParagraphStyleSpec {
   return spec({ indentStart: indent, indentFirstLine: indent });
 }
 
+/** A block's own style with the space its position calls for; unset sides keep the block's own. */
+export function spacedParagraphStyle(
+  own: ParagraphStyleSpec,
+  above: Dimension | undefined,
+  below: Dimension | undefined,
+): ParagraphStyleSpec {
+  if (above === undefined && below === undefined) return own;
+  const style: ParagraphStyle = { ...own.paragraphStyle };
+  if (above !== undefined) style.spaceAbove = above;
+  if (below !== undefined) style.spaceBelow = below;
+  return spec(style);
+}
+
 const QUOTE_ACCENT_WIDTH = pt(3);
 const QUOTE_PADDING_LEFT = pt(8);
 const NO_BORDER: TableCellBorder = { color: BORDER_GREY, width: pt(0), dashStyle: "SOLID" };
