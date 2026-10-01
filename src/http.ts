@@ -33,13 +33,14 @@ export async function fetchWithRetry(
     let res: Response;
     try {
       res = await fetchFn(url, init);
-    } catch {
-      if (last || isWrite) throw new Error("md2gd: cannot reach Google — check your network connection");
+    } catch (cause) {
+      if (last || isWrite) throw new Error("md2gd: cannot reach Google — check your network connection", { cause });
       await sleep(backoff(attempt));
       continue;
     }
     const retryable = (await isRateLimited(res)) || (!isWrite && SERVER_ERROR_STATUS.has(res.status));
     if (last || !retryable) return res;
+    await res.body?.cancel();
     await sleep(retryAfter(res) ?? backoff(attempt));
   }
 }
@@ -64,7 +65,11 @@ function backoff(attempt: number): number {
   return BASE_DELAY_MS * 2 ** (attempt - 1);
 }
 
+/** `Retry-After` as a wait in milliseconds, given either as seconds or as an HTTP date. */
 function retryAfter(res: Response): number | undefined {
-  const seconds = Number(res.headers.get("retry-after"));
-  return seconds > 0 ? Math.min(seconds * 1000, MAX_DELAY_MS) : undefined;
+  const header = res.headers.get("retry-after");
+  if (!header) return undefined;
+  const seconds = Number(header);
+  const ms = Number.isNaN(seconds) ? Date.parse(header) - Date.now() : seconds * 1000;
+  return ms > 0 ? Math.min(ms, MAX_DELAY_MS) : undefined;
 }

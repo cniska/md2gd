@@ -59,6 +59,15 @@ describe("fetchWithRetry", () => {
     expect(waits).toEqual([7000, 30000]);
   });
 
+  test("waits until a Retry-After date, within the same cap", async () => {
+    const at = new Date(Date.now() + 5000).toUTCString();
+    const { fetchFn } = sequence([new Response("", { status: 429, headers: { "retry-after": at } }), 200]);
+    const { sleep, waits } = recordSleeps();
+    await fetchWithRetry(fetchFn, "u", {}, sleep);
+    expect(waits[0]).toBeGreaterThan(3000);
+    expect(waits[0]).toBeLessThanOrEqual(5000);
+  });
+
   test("hands back the last response once retries run out", async () => {
     const { fetchFn, calls } = sequence([429]);
     const { sleep, waits } = recordSleeps();
@@ -70,9 +79,10 @@ describe("fetchWithRetry", () => {
   test("retries a dropped connection, then reports it as a network problem", async () => {
     const { fetchFn, calls } = sequence([new TypeError("Unable to connect")]);
     const { sleep } = recordSleeps();
-    await expect(fetchWithRetry(fetchFn, "u", {}, sleep)).rejects.toThrow(
-      "md2gd: cannot reach Google — check your network connection",
-    );
+    const error = await fetchWithRetry(fetchFn, "u", {}, sleep).catch((e: Error) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toBe("md2gd: cannot reach Google — check your network connection");
+    expect((error as Error).cause).toBeInstanceOf(TypeError);
     expect(calls()).toBe(4);
   });
 
