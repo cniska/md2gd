@@ -8,8 +8,9 @@ import {
   normalParagraphStyle,
   preTableParagraphStyle,
   preTableTextStyle,
+  TABLE_CONTENT_WIDTH_PT,
 } from "./style";
-import type { TablePlan } from "./table";
+import { columnWidths, type TablePlan } from "./table";
 
 /**
  * The Google surface the executor depends on. Injected so the executor is
@@ -90,7 +91,7 @@ async function fillSegments(client: DocsClient, documentId: string, segments: Se
       if (requests.length > 0) await client.batchUpdate(documentId, requests);
       cursor = endIndex;
     } else {
-      cursor = await insertTableSegment(client, documentId, segment.table, cursor);
+      cursor = await insertTableSegment(client, documentId, segment.table, cursor, TABLE_CONTENT_WIDTH_PT);
     }
   }
 }
@@ -120,6 +121,7 @@ async function insertTableSegment(
   documentId: string,
   plan: TablePlan,
   atIndex: number,
+  contentWidth: number,
 ): Promise<number> {
   // 1. Insert the empty table structure.
   await client.batchUpdate(documentId, [
@@ -135,7 +137,7 @@ async function insertTableSegment(
   //    not-yet-filled cell's index.
   const requests: DocRequest[] = [
     ...preTableSpacerRequests(located.startIndex),
-    ...columnWidthRequests(plan, located.startIndex),
+    ...columnWidthRequests(plan, contentWidth, located.startIndex),
     cellPaddingRequest(located.startIndex),
     preventRowSplitRequest(located.startIndex),
     ...(plan.header ? [headerShadingRequest(plan, located.startIndex)] : []),
@@ -189,9 +191,9 @@ function preTableSpacerRequests(tableStart: number): DocRequest[] {
   ];
 }
 
-function columnWidthRequests(plan: TablePlan, tableStart: number): DocRequest[] {
+function columnWidthRequests(plan: TablePlan, contentWidth: number, tableStart: number): DocRequest[] {
   // One request per column, since each column gets its own fixed width.
-  return plan.columnWidths.map((width, columnIndex) => ({
+  return columnWidths(plan, contentWidth).map((width, columnIndex) => ({
     updateTableColumnProperties: {
       tableStartLocation: { index: tableStart },
       columnIndices: [columnIndex],

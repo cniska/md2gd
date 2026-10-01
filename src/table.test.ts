@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { parseMarkdown } from "./parse";
-import { buildTablePlan } from "./table";
+import { buildTablePlan, columnWidths } from "./table";
 
-function firstTable(md: string) {
+function firstTable(md: string, contentWidth = 468) {
   const node = parseMarkdown(md).children.find((c) => c.type === "table");
   if (node?.type !== "table") throw new Error("no table parsed");
-  return buildTablePlan(node);
+  const plan = buildTablePlan(node);
+  return { ...plan, columnWidths: columnWidths(plan, contentWidth) };
 }
 
 const SIMPLE = ["| Step | Status |", "|---|---|", "| Book | Missing |", ""].join("\n");
@@ -26,6 +27,11 @@ describe("buildTablePlan", () => {
     const total = plan.columnWidths.reduce((s, d) => s + d.magnitude, 0);
     expect(Math.abs(total - 468)).toBeLessThanOrEqual(1);
     for (const w of plan.columnWidths) expect(w.unit).toBe("PT");
+  });
+
+  test("column widths fill whatever content width the table's container has", () => {
+    const total = firstTable(SIMPLE, 451.28).columnWidths.reduce((s, d) => s + d.magnitude, 0);
+    expect(Math.abs(total - 451.28)).toBeLessThanOrEqual(1);
   });
 
   test("two medium columns beside a long one still fill the full width", () => {
