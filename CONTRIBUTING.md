@@ -11,7 +11,7 @@ Thanks for your interest in md2gd.
 
 - Read `SPEC.md` first — it is the source of requirements (what, not how) — and `AGENTS.md` for conventions.
 - Build in thin vertical slices; drive conversion changes test-first.
-- Run `bun run check` (lint → typecheck → tests → audit) before every commit. It must be green.
+- Run `bun run check` (lint → typecheck → tests) before every commit. It must be green.
 
 ## Tests
 

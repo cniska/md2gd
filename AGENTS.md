@@ -16,7 +16,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 
 - Run locally: `bun run start -- <file.md>`.
 - Compile a standalone binary: `bun build --compile src/cli.ts --outfile md2gd`.
-- Check (lint → typecheck → test → audit): `bun run check`.
+- Check (lint → typecheck → test, offline): `bun run check`. The dependency audit (`bun run audit`) needs the network, so it runs only in CI (`ci.yml`) and at release.
 - Prove the spec's criteria against a scripted Google: `bun run test:acceptance` (compiles the binary first).
 - See a change in a real Google Doc: `bun run render -- <file.md>`; the recipe (credentials, evidence, cleanup) is `.claude/skills/md2gd-verify-doc/SKILL.md`. Run it after conversion, styling, or executor changes.
 - Cut a release: bump `version` in `package.json`, commit `chore: release vX.Y.Z`, and push a matching `vX.Y.Z` tag — `.github/workflows/release.yml` builds the binaries, writes their checksums, and publishes the GitHub release. There is no local release script.

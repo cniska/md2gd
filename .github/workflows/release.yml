@@ -32,6 +32,9 @@ jobs:
       - name: Check
         if: matrix.target == 'linux-x64'
         run: bun run check
+      - name: Audit
+        if: matrix.target == 'linux-x64'
+        run: bun run audit
       - name: Build binary
         run: bun build --compile src/cli.ts --outfile md2gd
       - name: Smoke test binary
