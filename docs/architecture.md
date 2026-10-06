@@ -43,7 +43,7 @@ A table's cell indices only exist after the table is in the document. So each ta
 
 Cell fills run **last cell first** (descending index order). Inserting text into a cell shifts the indices of everything after it, so filling in reverse means each insertion only moves cells that are already filled. Styling requests do not change indices, so they can be batched freely.
 
-After the fills, the table's size has changed, so the executor re-reads the table's own end index to know where the next segment begins. Column widths come from the same read: a document keeps the paper size of the account that created it, so the content width is the page width less its margins, never a fixed size. Docs clips a table wider than its container instead of shrinking it, so the widths must sum to that width exactly.
+After the fills, the table's size has changed, so the executor re-reads the table's own end index to know where the next segment begins. Column widths come from the same read: a document keeps the paper size of the account that created it, so the content width is the page width less its margins, never a fixed size. Docs clips a table wider than its container instead of shrinking it, so the widths are whole hundredths of a point that never sum wider than that width and fall short of it by less than a hundredth.
 
 ### Quotes are one-cell tables
 

@@ -97,7 +97,10 @@ export function columnWidths(plan: TablePlan, contentWidth: number): Dimension[]
     }
     const spare = contentWidth - columns * MIN_COLUMN_WIDTH_PT;
     const excessTotal = floors.reduce((sum, f) => sum + (f - MIN_COLUMN_WIDTH_PT), 0);
-    return floors.map((f) => pt(round(MIN_COLUMN_WIDTH_PT + (spare * (f - MIN_COLUMN_WIDTH_PT)) / excessTotal)));
+    return fitToHundredths(
+      floors.map((f) => MIN_COLUMN_WIDTH_PT + (spare * (f - MIN_COLUMN_WIDTH_PT)) / excessTotal),
+      contentWidth,
+    );
   }
 
   const widths = new Array<number>(columns).fill(0);
@@ -125,16 +128,20 @@ export function columnWidths(plan: TablePlan, contentWidth: number): Dimension[]
     widths[i] = remaining * (weightOf(i) / weightSum);
   }
 
-  return widths.map((w) => pt(round(w)));
+  return fitToHundredths(widths, contentWidth);
 }
 
 function equalShares(contentWidth: number, columns: number): Dimension[] {
-  const hundredths = Math.floor(contentWidth * 100 + 1e-6);
-  const base = Math.floor(hundredths / columns);
-  const extra = hundredths - base * columns;
-  return Array.from({ length: columns }, (_, col) => pt((base + (col < extra ? 1 : 0)) / 100));
+  return fitToHundredths(new Array<number>(columns).fill(contentWidth / columns), contentWidth);
 }
 
-function round(n: number): number {
-  return Math.round(n * 100) / 100;
+function fitToHundredths(raw: number[], contentWidth: number): Dimension[] {
+  const total = Math.floor(contentWidth * 100 + 1e-6);
+  const hundredths = raw.map((w) => Math.floor(w * 100));
+  const leftover = total - hundredths.reduce((sum, h) => sum + h, 0);
+  const byRemainder = raw
+    .map((w, col) => ({ col, remainder: w * 100 - (hundredths[col] ?? 0) }))
+    .sort((a, b) => b.remainder - a.remainder || a.col - b.col);
+  for (const { col } of byRemainder.slice(0, leftover)) hundredths[col] = (hundredths[col] ?? 0) + 1;
+  return hundredths.map((h) => pt(h / 100));
 }

@@ -10,6 +10,21 @@ function firstTable(md: string, contentWidth = 468) {
   return { ...plan, columnWidths: columnWidths(plan, contentWidth) };
 }
 
+function expectFitsContainer(widths: number[], contentWidth: number) {
+  const sum = widths.reduce((s, w) => s + w, 0);
+  expect(sum).toBeLessThanOrEqual(contentWidth + 1e-9);
+  expect(sum).toBeGreaterThan(contentWidth - 0.01 + 1e-9);
+}
+
+function oneRowTable(bodyLengths: number[]): string {
+  return [
+    `|${" H |".repeat(bodyLengths.length)}`,
+    `|${"---|".repeat(bodyLengths.length)}`,
+    `|${bodyLengths.map((n) => ` ${"q".repeat(n)} |`).join("")}`,
+    "",
+  ].join("\n");
+}
+
 const SIMPLE = ["| Step | Status |", "|---|---|", "| Book | Missing |", ""].join("\n");
 
 describe("buildTablePlan", () => {
@@ -25,14 +40,18 @@ describe("buildTablePlan", () => {
   test("column widths are fixed points that fill the full page content width", () => {
     const plan = firstTable(SIMPLE);
     expect(plan.columnWidths).toHaveLength(2);
-    const total = plan.columnWidths.reduce((s, d) => s + d.magnitude, 0);
-    expect(Math.abs(total - 468)).toBeLessThanOrEqual(1);
+    expectFitsContainer(
+      plan.columnWidths.map((d) => d.magnitude),
+      468,
+    );
     for (const w of plan.columnWidths) expect(w.unit).toBe("PT");
   });
 
   test("column widths fill whatever content width the table's container has", () => {
-    const total = firstTable(SIMPLE, 451.28).columnWidths.reduce((s, d) => s + d.magnitude, 0);
-    expect(Math.abs(total - 451.28)).toBeLessThanOrEqual(1);
+    expectFitsContainer(
+      firstTable(SIMPLE, 451.28).columnWidths.map((d) => d.magnitude),
+      451.28,
+    );
   });
 
   test("two medium columns beside a long one still fill the full width", () => {
@@ -44,8 +63,10 @@ describe("buildTablePlan", () => {
       "| role | enum | owner, staff |",
       "",
     ].join("\n");
-    const total = firstTable(md).columnWidths.reduce((s, d) => s + d.magnitude, 0);
-    expect(Math.abs(total - 468)).toBeLessThanOrEqual(1);
+    expectFitsContainer(
+      firstTable(md).columnWidths.map((d) => d.magnitude),
+      468,
+    );
   });
 
   test("a short column beside a very long one is floored, not collapsed", () => {
@@ -103,13 +124,39 @@ describe("buildTablePlan", () => {
   test("an equal split never sums wider than an unrounded container", () => {
     const md = ["| Name | Signature | Date |", "|---|---|---|", "| | | |", ""].join("\n");
     const widths = firstTable(md, 451.2756).columnWidths.map((d) => d.magnitude);
-    expect(widths.reduce((s, w) => s + w, 0)).toBeLessThanOrEqual(451.2756);
+    expectFitsContainer(widths, 451.2756);
+  });
+
+  test("a weighted split fits within a hundredth of its container", () => {
+    const md = ["| A | B | C |", "|---|---|---|", "| x | y | z |", ""].join("\n");
+    const widths = firstTable(md, 451.28).columnWidths.map((d) => d.magnitude);
+    expectFitsContainer(widths, 451.28);
+  });
+
+  test("a weighted split gives its leftover hundredths to the columns rounded down the most", () => {
+    const md = ["| A | B | C |", "|---|---|---|", "| xx | yyy | zzzz |", ""].join("\n");
+    expect(firstTable(md, 451.28).columnWidths.map((d) => d.magnitude)).toEqual([100.28, 150.43, 200.57]);
+  });
+
+  test("a split floored proportionally fits within a hundredth of its container", () => {
+    const fourColumns = oneRowTable([10, 17, 24, 31]);
+    expectFitsContainer(
+      firstTable(fourColumns, 304.81).columnWidths.map((d) => d.magnitude),
+      304.81,
+    );
+    const fiveColumns = oneRowTable([10, 17, 24, 31, 38]);
+    for (const cw of [301.48, 301.17, 302.33, 303.59, 304.81, 305.06]) {
+      expectFitsContainer(
+        firstTable(fiveColumns, cw).columnWidths.map((d) => d.magnitude),
+        cw,
+      );
+    }
   });
 
   test("an equal split never sums a hundredth short of a container whose width carries float error", () => {
     const md = ["| Name | Signature | Date |", "|---|---|---|", "| | | |", ""].join("\n");
     const widths = firstTable(md, 256.03).columnWidths.map((d) => d.magnitude);
-    expect(widths.reduce((s, w) => s + w, 0)).toBeCloseTo(256.03, 6);
+    expectFitsContainer(widths, 256.03);
   });
 
   test("a header-only table is sized by its headers, not shared equally", () => {
@@ -134,7 +181,7 @@ describe("buildTablePlan", () => {
       "",
     ].join("\n");
     const widths = firstTable(md, 451.28).columnWidths.map((d) => d.magnitude);
-    expect(widths.reduce((s, w) => s + w, 0)).toBeCloseTo(451.28, 6);
+    expectFitsContainer(widths, 451.28);
     expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.0100001);
   });
 
