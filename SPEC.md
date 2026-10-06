@@ -22,10 +22,6 @@ The result is a new, cleanly styled Google Doc in the user's Drive, with its URL
 
 A single technical user (the author) running the tool from a macOS or Linux terminal against their own personal Google account and Drive. Multi-user, server, or shared-team deployment is **out of scope** for v1.
 
-### Reference product
-
-`https://md2doc.com/` is the conceptual reference for output quality. The goal is comparable or better styling, delivered as a scriptable local CLI rather than a web app, with documents never leaving the user's own Google account.
-
 ---
 
 ## 2. Functional requirements
@@ -57,10 +53,10 @@ The tool must faithfully render the following, mapping each to the closest nativ
 - **FR-14a** — A table column's alignment (`:--` left, `:-:` center, `--:` right) applies to every cell in that column, header included; a column without one is left-aligned.
 - **FR-15** — Fenced and indented code blocks, in a monospace font with visual distinction from body text (e.g. shaded background or bordered block). Language hints need not produce syntax highlighting in v1.
 - **FR-16** — Blockquotes, visually distinct from body text.
-- **FR-17** — Horizontal rules (`---`) are **ignored** (produce no output). A bordered rule renders poorly in Google Docs, and heading spacing already separates sections, so thematic breaks are dropped rather than drawn.
-- **FR-18** — Images degrade to their alt text (readable text, per FR-21); the tool never crashes on an image. Actual embedding is **out of scope for v1**: the reference documents contain no images, so it is low-value, and inline embedding via the Docs API is a self-contained slice (URL-reachable images via `insertInlineImage`; local images need upload plumbing) that can return later.
+- **FR-17** — Horizontal rules (`---`) are **ignored** (produce no output).
+- **FR-18** — Images degrade to their alt text (readable text, per FR-21); the tool never crashes on an image. Embedding images is out of scope (§6).
 - **FR-19** — Links whose target a reader of the document can follow must remain clickable in the output. Links to targets that do not resolve outside the source tree — relative paths, bare filenames, in-page anchors, `file:` URLs — must render as plain text rather than dead links (see §9 auto-linking policy) — except a relative link whose target is present in a supplied link map (FR-27c), which is upgraded to a live link to that document's Google Doc URL.
-- **FR-20** — Footnotes degrade to readable text (per FR-21) without crashing. Native Google Docs footnotes are **out of scope for v1**: footnotes are a niche Markdown extension (not CommonMark) absent from the reference documents, and the Docs API's separate footnote segments do not fit the tool's index model — low value against real friction.
+- **FR-20** — Footnotes degrade to readable text (per FR-21) without crashing. Native Google Docs footnotes are out of scope (§6).
 - **FR-21** — Any Markdown construct not explicitly listed must degrade gracefully — rendered as readable text rather than raw markup or a crash.
 
 ### 2.4 Configuration & options (CLI)
@@ -75,16 +71,17 @@ md2gd --help | -h | help                                                        
 md2gd --version | -V | version                                                                  Version
 ```
 
-- **FR-21a** — Provide an `md2gd init` command for one-time setup: it accepts the user's downloaded OAuth **Desktop client** secret (e.g. `md2gd init --client client_secret.json`), stores it, and runs the consent flow once (AU-1), caching the token. After `init`, all conversion is pure command-line. Rationale: Google does not permit plain API keys for Drive/Docs writes, so a per-user OAuth token is required; `init` makes acquiring it a single explicit step rather than a hidden first-run side effect.
+- **FR-21a** — Provide an `md2gd init` command for one-time setup: it accepts the user's downloaded OAuth **Desktop client** secret (e.g. `md2gd init --client client_secret.json`), stores it, and runs the consent flow once (AU-1), caching the token. After `init`, all conversion is pure command-line.
 - **FR-22** — Provide `--help` describing usage, arguments, and options.
 - **FR-23** — Provide `--version`.
 - **FR-24** — Allow overriding the document title (per FR-4).
-- **FR-25** — Docs must land in a dedicated location rather than the Drive root. By default the tool creates and remembers its **own** folder (e.g. "md2gd") and places docs there. The user may override the destination per run with `--folder` (FR-27b), including a folder they did not create — one shared with them, or one inside a shared drive; this relies on the `drive` scope (AU-3). A `--folder` target the user cannot access, or that is not a folder, must fail with an actionable message and create nothing.
+- **FR-25** — Docs must land in a dedicated location rather than the Drive root. By default the tool places docs in its **own** folder (e.g. "md2gd"), created on first use and reused on every later run. The user may override the destination per run with `--folder` (FR-27b), including a folder they did not create — one shared with them, or one inside a shared drive; this relies on the `drive` scope (AU-3). A `--folder` target the user cannot access, or that is not a folder, must fail with an actionable message and create nothing.
 - **FR-26** — Persist tool state across runs in a user-scoped config file so invocations coordinate (v1 stores the file→doc mapping of FR-42). The file lives in a user-scoped location with restrictive permissions (AU-2), is forward-compatible (unknown keys are preserved rather than clobbered so later versions can add settings), and a corrupt file must never abort a conversion. The concrete on-disk layout is enumerated in §2.7.
 - **FR-27** — Provide a way to open the resulting doc, created or updated, in the browser on demand (e.g. `--open`), while the default remains print-link-only.
 - **FR-27a** — Provide an `--update [<url-or-id>]` option that re-renders into an existing document rather than creating a new one (see §2.6). With no argument, it targets the doc previously created from the same input file; with an argument, it targets that specific doc.
 - **FR-27b** — Provide a `--folder <url-or-id>` option naming a destination Drive folder, accepting either a full Drive folder URL or a bare folder id. The folder may sit in the user's own Drive or in a shared drive, and a shared-drive destination behaves identically. On a create, the new doc is placed in that folder instead of the default folder (FR-25). On an `--update`, the target doc is moved into that folder (its URL is unchanged); with no `--folder`, an update leaves the doc where it is. A folder the user cannot access, or that is not a folder, must fail with an actionable message before any destructive change.
 - **FR-27c** — Provide a `--links <path>` option naming a JSON file that maps document paths to their published Google Doc URLs (typically the same map a sync workflow already keeps to track each doc's URL). When supplied, a relative Markdown link whose target resolves to a path in the map renders as a live hyperlink to that document's Doc URL, instead of the plain text it would otherwise be (FR-19). This makes cross-references within a set of related documents clickable in the generated Docs. The link **text** is never altered — only the destination changes. Resolution: a link's target is resolved relative to the source Markdown file's own location (matching how Markdown renderers resolve relative links); map keys are resolved relative to the map file's location, so a repo-root map works regardless of the working directory; a target given as a bare document id or a full edit URL is accepted and normalised to a followable Doc URL. Any `#fragment` on a matched link is dropped — a Doc URL cannot address a Markdown heading. Links with a followable scheme, in-page anchors, and targets absent from the map are left exactly as FR-19 specifies. Only inline links (`[text](path)`) are considered; a reference-style link renders as plain text as it would without a map. A missing or malformed map file must fail with an actionable message before any document is written. The tool reports a one-line summary — to stderr, so it never pollutes the printed doc URL (FR-3) — of how many links were rewritten, how many anchors were dropped, and how many relative links went unmatched.
+- **FR-46** — When the `MD2GD_GOOGLE_ORIGIN` environment variable is set, every request to a Google API — OAuth consent and token, Docs, and Drive — goes to that origin instead, with its path unchanged. Nothing else changes: the printed document URL is still the Google Docs URL.
 
 ### 2.5 Content edge cases requiring special handling
 
@@ -111,7 +108,7 @@ These are derived from analyzing the reference due-diligence report and are the 
 
 ### 2.6 Updating an existing document ("stable URL" mode)
 
-The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fresh doc every time breaks shared links and scatters near-duplicates across Drive. `--update` re-renders into the **same** document so its URL, Drive location, and shares stay put. This was deferred in the original §6; it is now in scope.
+The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fresh doc every time breaks shared links and scatters near-duplicates across Drive. `--update` re-renders into the **same** document so its URL, Drive location, and shares stay put.
 
 **Scope (inherits AU-3):** because the tool uses the `drive` scope, `--update` may target **any document the user can edit** — one md2gd created, one made by hand or shared into a folder, or one living in a shared drive. The tool never *silently* updates: a plain run always creates (FR-5), and an update requires either the explicit `--update <url|id>` or a remembered mapping for the file (FR-42).
 
@@ -124,7 +121,7 @@ The user's core loop is *edit the Markdown, regenerate the Doc*. Creating a fres
   - `md2gd file.md --update` with **no argument** updates the doc previously created from that file (looked up in the mapping). `--update <url-or-id>` overrides with an explicit target and accepts either a full Docs URL or a bare document id.
   - A plain run (no `--update`) when a mapping already exists still **creates a new doc**, but prints a hint — e.g. `previously created <url> — pass --update to overwrite` — so the destructive path is never taken implicitly.
   - A stale mapping (target trashed or not found) must produce a clear error, not silently diverge into a new doc.
-- **FR-43** — **Honest limitations documented, not engineered around.** Google Docs comments anchored to cleared ranges will orphan, and a multi-round update is not atomic (a mid-run failure can leave the doc partially rewritten). These are acceptable for the single-user regenerate loop; they must be documented (README) rather than solved in v1. An `--update` target the user cannot access or edit (wrong id, no permission, trashed) must fail at the read-before-destroy step (FR-39) with an actionable message, leaving nothing changed — never a raw API error.
+- **FR-43** — **Inaccessible targets.** An `--update` target the user cannot access or edit (wrong id, no permission, trashed) fails with an actionable message and leaves nothing changed — never a raw API error.
 
 ### 2.7 Config & credential storage
 
@@ -151,7 +148,7 @@ The chosen visual identity is a **neutral, clean, professional default** — no 
 - **ST-7** — Consistent, professional page margins.
 - **ST-8** — Links styled in a conventional link appearance (e.g. colored, underlined) while remaining clickable.
 - **ST-9** — The styling must be **consistent and reproducible**: the same input produces the same look every time, and the look is uniform across all documents the tool generates.
-- **ST-10** — The result should be at least on par with `md2doc.com` in perceived polish.
+- **ST-10** — One typeface sets all text — body, headings, captions, and table cells — except code, which is monospace (ST-5).
 
 ### 3.1 Known pain points (must be handled, not left to fix by hand)
 
@@ -163,19 +160,18 @@ These are concrete defects the user has repeatedly had to correct by hand when c
 - **ST-14** — **Space before headings:** headings must have more space above them than below, so sections are visually grouped with their content.
 - **ST-15** — **Loose and tight lists:** a list with blank lines between its items spaces them like paragraphs; a list without keeps them close, as rendered Markdown does.
 - **ST-16** — **Flush container edges:** the first block inside a quote sits against its top and the last against its bottom, with no paragraph spacing of their own there (a table or quote at that edge excepted, per FR-45).
-
-Styling should be centralized/configurable enough that the default look can be adjusted in one place later (e.g. to introduce brand fonts/colors) without rewriting the conversion logic — but exposing that configuration to the end user is not required in v1.
+- **ST-17** — **Captions stay with their element:** a page break never falls between a caption (FR-34) and the element it introduces.
 
 ---
 
 ## 4. Authentication & authorization requirements
 
-- **AU-1** — Authenticate to Google as the **user's personal Google account** using an OAuth "installed application" (desktop) flow, initiated by `md2gd init` (FR-21a). It opens the system browser for consent once (a loopback redirect captures the code); subsequent runs reuse a locally cached token. Plain API keys are **not** an option — Google rejects them for Drive/Docs writes — and service accounts are unsuitable (no personal Drive storage, wrong ownership), so a cached user OAuth token is the mechanism.
+- **AU-1** — Authenticate to Google as the **user's personal Google account** using an OAuth "installed application" (desktop) flow, initiated by `md2gd init` (FR-21a). It opens the system browser for consent once (a loopback redirect captures the code); subsequent runs reuse a locally cached token.
 - **AU-2** — Cached credentials/tokens must be stored securely in a user-scoped location with appropriately restrictive file permissions, and must never be committed to the repository.
 - **AU-3** — Request only the scope the tool's capabilities require, and no more. Because the tool must place docs in folders the user did not create (FR-27b) and update docs it did not itself create (§2.6), it uses the `drive` scope, which also covers the Docs edits (`documents.create`/`batchUpdate`), so no separate Docs scope is requested. This is a deliberate tradeoff: `drive` is a sensitive scope, but the narrower `drive.file` cannot reach user-created folders or foreign docs, which are core to the workflow. The tool must never request more than `drive`.
 - **AU-4** — Tokens must refresh automatically when expired without forcing a full re-consent, until revoked.
 - **AU-5** — Resetting local credentials must be possible and documented. v1 does this by deleting the config directory (§2.7), which removes the cached token and stored client secret; the next `init` re-consents from scratch.
-- **AU-6** — The tool must document the one-time Google Cloud project / OAuth client setup the user must perform, in clear step-by-step form (see §8). The docs **must** call out: (a) **publish the OAuth consent screen to "Production"** — leaving it in "Testing" causes Google to expire refresh tokens after 7 days, silently breaking AU-4; and (b) that `drive` is a **sensitive scope**, so consent shows an "unverified app" warning the user clicks through — fine for a personal tool run against one's own account; distributing it to others would require Google verification.
+- **AU-6** — *Retired: the setup documentation is a property of the README, D-2.*
 - **AU-7** — No document content or credentials may be sent to any third-party service other than Google's own APIs. All processing happens locally or within the user's Google account.
 - **AU-8** — The loopback consent callback must be protected against authorization-code injection: a random `state` is verified on return and PKCE (S256) is used. Denied consent and a timeout must both terminate `init` cleanly rather than hang.
 
@@ -183,36 +179,31 @@ Styling should be centralized/configurable enough that the default look can be a
 
 ## 5. Non-functional requirements
 
-- **NF-1** — Single-command install/run on macOS or Linux with minimal prerequisites; any required runtime or external dependency must be clearly documented.
-- **NF-2** — Convert a typical document (~400 lines, multiple tables, like the reference due-diligence report) in a few seconds, network round-trips aside.
+- **NF-1** — The tool runs on macOS or Linux as a single standalone executable, with no runtime to install.
+- **NF-2** — Against a Google that answers instantly, converting the reference document finishes within 5 seconds.
 - **NF-3** — Clear, human-readable error messages for the common failure modes: no network, auth failure/expired consent, invalid file, Drive permission denied, API rate limiting. Errors must not dump raw stack traces as the primary output.
 - **NF-4** — Idempotent auth: running repeatedly does not create duplicate credentials or re-prompt unnecessarily.
-- **NF-5** — Handle Google API rate limits / transient errors with sensible retry behavior rather than immediate hard failure.
-- **NF-6** — The codebase must be structured so conversion logic, styling, and the Google API integration are separable (styling can change without touching parsing; API layer can be tested/mocked independently).
-- **NF-7** — Sensitive files (tokens, client secrets, credentials) must be listed in `.gitignore` from the start.
-
-### 5.1 Automated testing (non-negotiable)
-
-Automated tests are a **hard requirement**, not optional. The tool must not be considered complete without them, and they must be present and passing throughout development — not bolted on at the end.
-
-- **NF-8** — An automated test suite must ship with the tool and be part of the project's verification, which must pass before any release.
-- **NF-9** — The conversion layer must be **unit-tested against the Google API boundary mocked** (per NF-6), so the markdown-AST → `batchUpdate`-request mapping is verified without live network or auth. Tests assert the *requests produced*, not just that code runs.
-- **NF-10** — Every §2.5 edge case (FR-28 through FR-37, FR-44, FR-45) must have a dedicated test proving correct output: rich content in cells, emoji preservation, literal chars in code spans, Unicode typography survival, soft-break handling, caption-not-heading, per-table column sizing, no-overflow, bare-domain handling, blocks nested in quotes and list items. These are the constructs that regress silently, so they are tested explicitly.
-- **NF-11** — The §3.1 styling pain points (ST-11 through ST-16) must be covered by tests asserting the corresponding paragraph/table style fields are emitted (paragraph space-after, space-after-blocks, cell padding, space-before-headings, loose and tight lists, flush container edges).
-- **NF-12** — Tests must be deterministic and runnable offline (no dependency on live Google APIs or cached credentials). Any real end-to-end check against Google is a separate, opt-in step, not part of the default suite.
-- **NF-13** — The update path (§2.6) must be unit-tested against the mocked Google boundary: the body-clear requests (including the style reset and the already-empty-body case), the GET-before-destroy ordering, the rename-on-title-change, and the mapping lookup / override / stale-mapping behavior. As with NF-9, tests assert the *requests produced*, not just that code runs.
-- **NF-14** — The `--folder` option (FR-27b) must be unit-tested: extracting a folder id from a Drive folder URL and from a bare id, that a create places the doc under the given folder rather than the default (FR-25), that `--update` moves the target doc into it before any destructive change, and that an `--update` without it leaves the doc where it is. The title-cased filename fallback (FR-4) must likewise have dedicated tests.
-- **NF-14a** — Reaching a shared drive (FR-25, FR-27b) must be unit-tested at the mocked Google boundary: every Drive request acting on a caller-supplied folder or document id — the create into a given folder, the rename, and both requests a move makes — must be asserted to declare shared-drive support. Drive answers for shared-drive content as though it did not exist when a request omits that declaration, so a request that drops it must turn the test red.
-- **NF-15** — The `--links` cross-document resolution (FR-27c) must be unit-tested against representative cases: a relative link to a mapped doc becomes the mapped Doc URL, a matched link with an anchor drops the fragment, an unmatched relative link and an in-page anchor stay plain text, keys resolve relative to the map file, and a bare id / edit URL target normalises. As with NF-9, assert the produced output (rewritten AST / requests), not just that code runs.
-- **NF-16** — Transient-failure handling (NF-3, NF-5) must be unit-tested at the mocked Google boundary: a rate-limited response is retried and the run carries on once it succeeds, a server error or dropped connection is retried on a read but never resent on a write that may already have applied, a client error is never retried, and lasting rate limiting or a lasting network failure ends in its clear message rather than a raw API error.
+- **NF-5** — A rate-limited response, a server error, or a dropped connection on a read is retried, and the run carries on once a retry succeeds; lasting rate limiting or a lasting network failure ends in its NF-3 message.
+- **NF-6** — *Retired: stage separation is an AGENTS.md invariant.*
+- **NF-7** — *Retired: duplicates D-4.*
+- **NF-8** — *Retired: the shipped suite is D-5; the criteria in §7 are proven through the CLI.*
+- **NF-9** — *Retired: unit-test practice is an AGENTS.md convention.*
+- **NF-10** — *Retired: each §2.5 edge case is proven by a criterion in §7.*
+- **NF-11** — *Retired: each §3.1 pain point is proven by a criterion in §7.*
+- **NF-12** — *Retired: unit-test practice is an AGENTS.md convention.*
+- **NF-13** — *Retired: the update path is proven by criteria in §7.*
+- **NF-14** — *Retired: `--folder` and the filename title are proven by criteria in §7.*
+- **NF-14a** — *Retired: shared-drive reach is proven by a criterion in §7.*
+- **NF-15** — *Retired: `--links` resolution is proven by a criterion in §7.*
+- **NF-16** — *Retired: retry behavior is NF-5 and NF-17.*
+- **NF-17** — A write that may already have applied is never resent, and a client error is never retried.
 
 ---
 
 ## 6. Out of scope (v1)
 
 - Reverse conversion (Google Docs → Markdown).
-- ~~Updating/syncing a previously created doc in place.~~ **Now in scope** as "stable URL" mode — see §2.6 (FR-38–FR-43), for any doc the user can edit.
-- Headers / footers, and page numbers. The Docs API has no page-number field request, and a footer is a single block shared across all pages, so a live page number is not achievable via `batchUpdate` at all. A static title header is possible but low-value (the doc already opens with its H1) and is deferred; it can be added later as an isolated slice.
+- Headers, footers, and page numbers.
 - Batch conversion of many files in one invocation (nice-to-have, not required).
 - Multi-user / team / server deployment, or service-account automation.
 - Syntax highlighting inside code blocks.
@@ -227,27 +218,41 @@ Automated tests are a **hard requirement**, not optional. The tool must not be c
 
 The tool is considered done for v1 when all of the following hold:
 
-- **AC-1** — Running `md2gd path/to/report.md` (the reference document) with valid auth produces a new Google Doc and prints its URL.
-- **AC-2** — Opening that URL shows a document where: the title is correct; all headings appear in the Google Docs outline pane at the right levels; every table renders with a styled header row and no overflow; bold/italic/links/inline code/emoji render correctly; horizontal rules produce no output (per FR-17); bulleted lists render with correct nesting.
-- **AC-3** — A test document exercising the full feature set in §2.3 (images, code blocks, blockquotes, task lists, nested numbered+bulleted lists, footnotes, strikethrough) renders each element correctly or degrades gracefully per FR-21, with no crash.
-- **AC-4** — `md2gd init` completes auth via browser consent once; subsequent conversions reuse the cached token with no prompt and no browser.
-- **AC-5** — The visual result is subjectively "professional" per §3 and at least matches `md2doc.com` output quality on the reference document.
-- **AC-6** — `md2gd init` and all §2.4 CLI options (`--help`, `--version`, title override, `--open`) work as specified.
-- **AC-7** — Error cases from NF-3 each produce a clear, non-crashing message and a non-zero exit code.
-- **AC-8** — No credentials or document content are transmitted anywhere except Google's APIs; token/secret files are gitignored.
-- **AC-9** — Re-running with `--update` on an editable doc (whether md2gd created it or not) re-renders it at the **same** URL: the body reflects the edited Markdown, no prior-render style bleeds in, the title tracks the H1, and a failed GET leaves the doc untouched. An `--update` target the user cannot access fails with a clear message (FR-43), not a raw API error.
-- **AC-10** — Running `md2gd file.md --folder <url|id>` on a folder the user can write — a shared folder they did not create, or one inside a shared drive — places the new doc in that folder, and `--update` on a doc already in a shared drive re-renders it in place; a plain run still lands in the default md2gd folder (FR-25, FR-27b).
-- **AC-11** — Running `md2gd file.md --links <map>` renders a relative cross-reference to another document in the map as a clickable link to that document's Doc URL, while a reference to a document absent from the map remains plain text (FR-27c).
+- **AC-1** — Running `md2gd path/to/report.md` on the reference document with valid auth creates a new Google Doc in md2gd's own folder, prints its URL to stdout, and exits zero; a second run reuses that folder. (FR-1, FR-2, FR-3, FR-6, FR-25)
+- **AC-2** — In the document AC-1 creates, the title is the Markdown's H1; each heading carries the heading style of its level; bold, italic, bold+italic, inline code, strikethrough, and links carry their formatting; bulleted and numbered lists nested three levels deep carry each level's indentation and marker; every table has its header row; a horizontal rule produces no output. (FR-4, FR-10, FR-11, FR-12, FR-14, FR-17)
+- **AC-3** — Converting the sample file (D-3) renders task lists as checkboxes, fenced and indented code blocks in monospace set apart from prose, and blockquotes set apart from body text; an image becomes its alt text, a footnote becomes readable text, and a construct §2.3 does not list becomes readable text without raw markup; the run exits zero. (FR-13, FR-15, FR-16, FR-18, FR-20, FR-21)
+- **AC-4** — `md2gd init --client <secret>` opens the consent page once, stores the client secret, and caches the token; a following conversion completes without opening a browser or prompting, and running `init` again leaves one set of credentials. (FR-21a, AU-1, NF-4)
+- **AC-5** — The document AC-1 creates is styled as §3 specifies: body text at one reading size with comfortable line spacing, H1 > H2 > H3 by size and weight, space around headings, paragraphs and lists, a table header row in bold on a shaded background with cell borders and padding and rows that do not split across pages, code in monospace, quotes accented, the default page margins, links colored and underlined, and one typeface for all non-code text; converting the same input twice produces the same styling. (ST-1, ST-2, ST-3, ST-4, ST-5, ST-6, ST-7, ST-8, ST-9, ST-10)
+- **AC-6** — `--help`, `-h`, and `help` print usage and exit zero; `--version`, `-V`, and `version` print the version; `--title` overrides the title; a file without an H1 takes its title from the filename (`service-readiness-review.md` → "Service Readiness Review"); `--open` opens the resulting doc's URL in the browser, created or updated, while a run without it opens nothing. (FR-4, FR-22, FR-23, FR-24, FR-27)
+- **AC-7** — Each of no network, expired or revoked consent, Drive permission denied, and lasting rate limiting ends the run with a human-readable message and no stack trace, and a non-zero exit. (FR-6, NF-3, NF-5)
+- **AC-8** — With `MD2GD_GOOGLE_ORIGIN` set, every request md2gd makes during `init`, a create, and an update goes to that origin, and the printed URL is still the Google Docs URL. (FR-46, AU-7)
+- **AC-9** — Running `--update` on an editable doc, whether md2gd created it or not, re-renders it at the same URL: the body matches a fresh create from the edited Markdown, no style from the previous render remains, an already-empty body updates without error, and a changed H1 renames the doc. (FR-27a, FR-38, FR-40, FR-41)
+- **AC-10** — `--folder <url|id>` on a folder the user can write — their own, one shared with them, or one in a shared drive — places a new doc in that folder; `--update --folder` moves the target doc there at the same URL, and `--update` without it leaves the doc where it is; a folder the user cannot access, or a non-folder, fails with an actionable message and changes nothing. (FR-25, FR-27b)
+- **AC-11** — `--links <map>` renders a relative link to a mapped document as a live link to its Doc URL with any `#fragment` dropped and its text unchanged, resolving the target against the source file and the keys against the map file, and accepting a bare document id or an edit URL as a map value; an unmapped relative link, an in-page anchor, and a reference-style link stay plain text; stderr carries a one-line summary of the counts; a missing or malformed map fails with an actionable message before any document is written. (FR-19, FR-27c)
+- **AC-12** — An `--update` whose target cannot be read — a wrong id, no permission, or a trashed doc — exits non-zero with an actionable message and leaves the target unchanged. (FR-39, FR-43)
+- **AC-13** — After a create, `md2gd file.md --update` with no argument updates that doc; `--update <url|id>` on a doc md2gd did not create adopts it, so a later no-argument `--update` targets it; a plain run with a mapping creates a new doc and prints a hint naming the earlier one; a mapping whose doc is gone fails with a clear error and creates nothing. (FR-5, FR-42)
+- **AC-14** — A missing, unreadable, empty, or non-Markdown input file fails with an actionable message, a non-zero exit, and no document; an input path given with `~` or relative to the working directory resolves. (FR-8, FR-9)
+- **AC-15** — Finnish text, color emoji, em- and en-dashes, arrows, and curly quotes reach the document unchanged, emoji stay on the line of the text that follows them, and formatting around an emoji covers exactly its text. (FR-7, FR-29, FR-31)
+- **AC-16** — In tables: a cell's bold lead-in, em-dash, and inline code keep their formatting; a column's alignment applies to every cell in it, header included; adjacent tables of different shapes stay separate and are sized independently; a long-text column takes the width while a one-word column holds its widest cell on one line; a blank answer column is sized for what will be written into it; no table exceeds the page width. (FR-14a, FR-28, FR-35, FR-36)
+- **AC-17** — `_`, `*`, `/`, and `;` inside inline code stay literal; single-line breaks inside a paragraph render as separate lines; a run of `**Key:** value` lines renders as one tightly spaced block; a bold-only line renders as a caption outside the heading outline; a bare domain stays plain text, unchanged. (FR-30, FR-32, FR-33, FR-34, FR-37)
+- **AC-18** — Every §2.3 block nested in a blockquote or list item, at any depth, renders as it does at the top level, with each quote's single left accent and each item's later blocks aligned under its text; the nestings Google Docs cannot represent degrade exactly as FR-45 lists. (FR-44, FR-45)
+- **AC-19** — Paragraphs are separated by space after them, not blank lines; tables, code blocks, blockquotes, and lists have space after them; table cells have padding on all sides; headings have more space above than below; a loose list spaces its items like paragraphs and a tight list keeps them close; the first and last blocks in a quote sit flush with its edges; a caption is kept on the same page as the element it introduces. (ST-11, ST-12, ST-13, ST-14, ST-15, ST-16, ST-17)
+- **AC-20** — A rate-limited response, a server error on a read, and a dropped connection on a read are each retried and the run succeeds; a write that fails after it may have applied is not resent; a client error is not retried. (NF-5, NF-17)
+- **AC-21** — `init` creates the config directory and its credential files readable by the owner only; the consent request asks for exactly the `drive` scope; an expired token refreshes without opening a browser; after the config directory is deleted, a conversion fails asking for `init`, and `init` consents afresh. (AU-2, AU-3, AU-4, AU-5)
+- **AC-22** — `init` rejects a consent callback whose `state` does not match, presents a PKCE S256 verifier matching its challenge, and exits non-zero without a token when consent is denied or times out. (AU-8)
+- **AC-23** — A conversion preserves unknown top-level keys in `config.json`, and a corrupt `config.json` does not stop a conversion. (FR-26)
+- **AC-24** — The released executable runs `md2gd --version` on a machine with no Bun installed. (NF-1)
+- **AC-25** — Against a Google that answers instantly, converting the reference document finishes within 5 seconds. (NF-2)
 
 ---
 
 ## 8. Deliverables
 
 - **D-1** — The working CLI tool, invokable as `md2gd`.
-- **D-2** — A `README.md` covering: install, the one-time Google Cloud / OAuth client setup (AU-6), first-run auth, usage examples, all options, config file format and location, and how to reset credentials.
+- **D-2** — A `README.md` covering: install and its prerequisites, the one-time Google Cloud / OAuth client setup in step-by-step form, first-run auth, usage examples, all options, config file format and location, how to reset credentials, and the update path's limitations. The setup steps call out that the OAuth consent screen must be published to "Production" — in "Testing", Google expires refresh tokens after 7 days — and that `drive` is a sensitive scope, so consent shows an "unverified app" warning the user clicks through. The limitations are that comments anchored to replaced text orphan, and that an update is not atomic: a failure mid-run can leave the doc partly rewritten.
 - **D-3** — A sample/test Markdown file exercising the full §2.3 feature set, used for AC-3.
 - **D-4** — `.gitignore` covering tokens, client secrets, and any local build artifacts, present from the first commit.
-- **D-5** — The automated test suite required by §5.1, passing via `verify`.
+- **D-5** — An automated test suite, part of the project's verification, which passes before any release.
 
 ---
 
@@ -271,7 +276,7 @@ Relocated to `AGENTS.md`, retired here so their IDs never resolve to something n
 
 These are explicitly **not** constrained by this spec; choose what best satisfies the requirements:
 
-- How styling is expressed and centralized (§3, NF-6).
+- How styling is expressed and centralized (§3).
 - Exact typographic values (fonts, sizes, spacing, colors) toward the §3 intent.
 - Config file format and CLI option syntax.
 
