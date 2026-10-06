@@ -6,7 +6,6 @@ const OriginSchema = z
   .url({ protocol: /^https?$/, abort: true })
   .refine((value) => new URL(value).origin === value.replace(/\/$/, ""));
 
-/** A Google API endpoint, sent to `MD2GD_GOOGLE_ORIGIN` instead when that is set, with the path kept. */
 export function googleEndpoint(url: string, env: Record<string, string | undefined> = process.env): string {
   const override = env[ORIGIN_VARIABLE];
   if (!override) return url;

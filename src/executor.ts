@@ -20,26 +20,14 @@ import {
 } from "./style";
 import { columnWidths, type TablePlan } from "./table";
 
-/**
- * The Google surface the executor depends on. Injected so the executor is
- * tested against a mock and never touches the network in unit tests.
- */
 export interface DocsClient {
   createDocument(title: string, folderId?: string): Promise<{ documentId: string }>;
   batchUpdate(documentId: string, requests: DocRequest[]): Promise<void>;
   getDocument(documentId: string): Promise<DocumentResource>;
-  /** Rename the underlying Drive file (used to keep an updated doc's title in sync). */
   renameDocument(documentId: string, name: string): Promise<void>;
-  /** Move the underlying Drive file into the given folder (used by `--update --folder`). */
   moveDocument(documentId: string, folderId: string): Promise<void>;
 }
 
-/**
- * Create a document and populate it from the planned segments. Linear segments
- * convert to deterministic requests; tables are inserted, read back for their
- * real cell indices, then filled — so no cell offsets are ever guessed.
- * Returns the new document id.
- */
 export async function executeDocument(
   client: DocsClient,
   title: string,
@@ -51,14 +39,6 @@ export async function executeDocument(
   return documentId;
 }
 
-/**
- * Re-render an existing document in place ("stable URL" mode). The doc is read
- * first (so an auth/404/permission failure leaves it untouched), its
- * body cleared, then the normal fill pipeline runs into the emptied doc. If the
- * desired title differs from the doc's current name, the Drive file is renamed
- * so the title tracks the H1. The URL never changes; the Drive location changes
- * only when a folder is given.
- */
 export async function updateDocument(
   client: DocsClient,
   documentId: string,
@@ -66,10 +46,6 @@ export async function updateDocument(
   segments: Segment[],
   folderId?: string,
 ): Promise<void> {
-  // Read before any destructive call, so a missing or inaccessible target leaves
-  // it untouched. A 403/404 means the id is wrong, the doc was trashed,
-  // or the user lacks access — translate it to an actionable message. Only the
-  // read is wrapped; later failures surface as-is.
   let doc: DocumentResource;
   try {
     doc = await client.getDocument(documentId);
@@ -82,7 +58,6 @@ export async function updateDocument(
     throw error;
   }
 
-  // Relocate before clearing, so a bad --folder fails before the body is touched.
   if (folderId) await client.moveDocument(documentId, folderId);
   const clear = clearBodyRequests(doc);
   if (clear.length > 0) await client.batchUpdate(documentId, clear);
@@ -90,22 +65,15 @@ export async function updateDocument(
   if (doc.title !== title) await client.renameDocument(documentId, title);
 }
 
-/** Populate a document (create or freshly cleared) from planned segments. */
 async function fillSegments(client: DocsClient, documentId: string, segments: Segment[]): Promise<void> {
   await fillContainer(client, documentId, segments, BODY_START_INDEX, { inset: 0, isCell: false });
 }
 
-/** Where segments are written: the body, or a quote's cell this many points in from the page's content edge. */
 interface Container {
   inset: number;
   isCell: boolean;
 }
 
-/**
- * Write segments into a container from `startIndex`, returning the index after
- * them. Content is only ever appended at the end of the innermost open
- * container, so nothing before the cursor moves while a container fills.
- */
 async function fillContainer(
   client: DocsClient,
   documentId: string,
@@ -137,12 +105,6 @@ async function fillContainer(
   return cursor;
 }
 
-/**
- * Requests that empty a document's body. Deletes all content except the final
- * undeletable newline, then resets the surviving paragraph to NORMAL_TEXT with
- * no bullets so the previous render's trailing heading/list style can't bleed
- * into the new content. An already-empty body skips the delete.
- */
 function clearBodyRequests(doc: DocumentResource): DocRequest[] {
   const requests: DocRequest[] = [];
   const end = bodyEndInsertIndex(doc);
@@ -164,21 +126,15 @@ async function insertTableSegment(
   atIndex: number,
   inset: number,
 ): Promise<number> {
-  // 1. Insert the empty table structure.
   await client.batchUpdate(documentId, [
     { insertTable: { rows: plan.rows, columns: plan.columns, location: { index: atIndex } } },
   ]);
 
-  // 2. Read back the real table start and per-cell content indices, and the page
-  //    the columns must fit.
   const doc = await client.getDocument(documentId);
   const located = locateTable(doc, atIndex);
   if (!located) throw new Error("md2gd: inserted table not found in document");
   const contentWidth = pageContentWidth(doc) - inset;
 
-  // 3. Style the table and fill cells. Styling requests don't change indices;
-  //    cell fills are ordered last-cell-first so each insertion never shifts a
-  //    not-yet-filled cell's index.
   const requests: DocRequest[] = [
     ...preTableSpacerRequests(located.startIndex),
     ...columnWidthRequests(plan, contentWidth, located.startIndex),
@@ -189,14 +145,9 @@ async function insertTableSegment(
   ];
   await client.batchUpdate(documentId, requests);
 
-  // 4. The table's size changed with the fills; read its new end to continue after it.
   return tableEndIndex(await client.getDocument(documentId), located.startIndex);
 }
 
-/**
- * Insert a quote as a one-cell table with only a left accent, then fill its cell
- * with the quote's own segments through the same path as the body.
- */
 async function insertQuoteSegment(
   client: DocsClient,
   documentId: string,
@@ -234,18 +185,12 @@ async function insertQuoteSegment(
     inset: inset + QUOTE_INSET_PT,
     isCell: true,
   });
-  // A cell keeps a paragraph of its own after a table it ends with; pin it like
-  // the spacer before every table, so it reads as the same thin gap.
   const last = quote.segments.at(-1);
   if (last !== undefined && last.kind !== "linear") await client.batchUpdate(documentId, spacerRequests(end));
 
   return tableEndIndex(await client.getDocument(documentId), located.startIndex);
 }
 
-/**
- * The width between the document's side margins. A document keeps the paper size
- * of the account that created it (A4 or US Letter), so it is read, never assumed.
- */
 function pageContentWidth(doc: DocumentResource): number {
   const style = doc.documentStyle;
   const page = style?.pageSize?.width?.magnitude;
@@ -255,15 +200,9 @@ function pageContentWidth(doc: DocumentResource): number {
 
 interface LocatedTable {
   startIndex: number;
-  /** cellIndices[row][col] = index at which to insert that cell's text. */
   cellIndices: number[][];
 }
 
-/**
- * The first table, in document order and at any depth, that starts where `matches`
- * says. A table that starts earlier is an ancestor or an earlier sibling, so it
- * is searched through rather than matched.
- */
 function findTable(
   content: DocStructuralElement[],
   matches: (start: number) => boolean,
@@ -301,19 +240,12 @@ function locateTable(doc: DocumentResource, atIndex: number): LocatedTable | und
   return { startIndex: element.startIndex, cellIndices };
 }
 
-/**
- * Pin the empty paragraph the API injects before the table to a thin,
- * deterministic spacer. Skipped when the table starts at the body's first index
- * (no paragraph precedes it). This is what makes create and update modes render
- * tables identically, and lets a preceding caption group with its table.
- */
 function preTableSpacerRequests(tableStart: number): DocRequest[] {
   const paragraphStart = tableStart - 1;
   if (paragraphStart < BODY_START_INDEX) return [];
   return spacerRequests(paragraphStart);
 }
 
-/** Style the empty paragraph at `paragraphStart` as the thin gap that sits beside every table. */
 function spacerRequests(paragraphStart: number): DocRequest[] {
   const range = { startIndex: paragraphStart, endIndex: paragraphStart + 1 };
   return [
@@ -329,7 +261,6 @@ function spacerRequests(paragraphStart: number): DocRequest[] {
 }
 
 function columnWidthRequests(plan: TablePlan, contentWidth: number, tableStart: number): DocRequest[] {
-  // One request per column, since each column gets its own fixed width.
   return columnWidths(plan, contentWidth).map((width, columnIndex) => ({
     updateTableColumnProperties: {
       tableStartLocation: { index: tableStart },
@@ -374,12 +305,6 @@ function headerCellStyleRequest(plan: TablePlan, tableStart: number): DocRequest
   };
 }
 
-/**
- * Build fill requests for every cell, ordered by descending index so that
- * inserting into a later cell never shifts the index of an earlier, not-yet-
- * filled one. A cell is a container holding one paragraph, written through the
- * same converter as every other block.
- */
 function cellFillRequests(plan: TablePlan, cellIndices: number[][]): DocRequest[] {
   const fills = plan.cells.flatMap((cellRow, row) =>
     cellRow.flatMap((cell, col) => {
@@ -400,7 +325,5 @@ function cellFillRequests(plan: TablePlan, cellIndices: number[][]): DocRequest[
 function bodyEndInsertIndex(doc: DocumentResource): number {
   const content = doc.body?.content ?? [];
   const last = content[content.length - 1];
-  // The body always ends with a paragraph whose newline is the final index;
-  // insert new content just before it.
   return Math.max(BODY_START_INDEX, (last?.endIndex ?? BODY_START_INDEX + 1) - 1);
 }

@@ -3,7 +3,6 @@ import type { Link, Root } from "mdast";
 import { LinkMapSchema, resolveLinkMap, rewriteLinks } from "./links";
 import { parseMarkdown } from "./parse";
 
-/** Collect every link node's (text, url) so a rewrite's effect is observable. */
 function links(tree: Root): { text: string; url: string }[] {
   const found: { text: string; url: string }[] = [];
   const walk = (node: unknown): void => {
@@ -20,8 +19,6 @@ function links(tree: Root): { text: string; url: string }[] {
   return found;
 }
 
-// A map keyed by absolute paths, as resolveLinkMap would produce, so the rewrite
-// tests don't depend on a real map file on disk.
 function mapFrom(entries: Record<string, string>): Map<string, string> {
   return new Map(Object.entries(entries));
 }
@@ -107,7 +104,6 @@ describe("rewriteLinks", () => {
     const tree = parseMarkdown("See [it](a%23b.md).\n");
     const stats = rewriteLinks(tree, "/repo/docs/architecture.md", localMap);
     expect(links(tree)[0]?.url).toBe("https://docs.google.com/document/d/HASH");
-    // The `#` is a literal character here, so no anchor was dropped.
     expect(stats).toEqual({ rewritten: 1, anchorsDropped: 0, unmatched: 0 });
   });
 });

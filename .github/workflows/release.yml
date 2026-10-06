@@ -29,9 +29,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: jdx/mise-action@v5
       - run: bun install --frozen-lockfile
-      - name: Verify
+      - name: Check
         if: matrix.target == 'linux-x64'
-        run: bun run verify
+        run: bun run check
       - name: Build binary
         run: bun build --compile src/cli.ts --outfile md2gd
       - name: Smoke test binary

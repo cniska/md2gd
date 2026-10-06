@@ -36,9 +36,6 @@ describe("buildTablePlan", () => {
   });
 
   test("two medium columns beside a long one still fill the full width", () => {
-    // Regression: the pinning pass used to fix col widths against a stale weight
-    // sum, over-pinning all three columns to their floors and leaving the table
-    // short of the right margin (summed ~408, not 468).
     const md = [
       "| Column | Type | Notes |",
       "|---|---|---|",
@@ -55,25 +52,21 @@ describe("buildTablePlan", () => {
     const md = ["| Sev | Finding |", "|---|---|", `| 🔴 Critical | ${"x".repeat(300)} |`, ""].join("\n");
     const [sev, finding] = firstTable(md).columnWidths;
     if (!sev || !finding) throw new Error("expected two widths");
-    // The severity column must stay readable (~0.7in), not shrink to a sliver.
     expect(sev.magnitude).toBeGreaterThanOrEqual(50);
     expect(finding.magnitude).toBeGreaterThan(sev.magnitude);
     expect(sev.magnitude + finding.magnitude).toBeLessThanOrEqual(468);
   });
 
   test("a short emoji column is widened to hold its value on one line", () => {
-    // "🔴 Critical" needs ~70pt of content width; the old flat 54pt floor wrapped it.
     const md = ["| Severity | Finding |", "|---|---|", `| 🔴 Critical | ${"x".repeat(400)} |`, ""].join("\n");
     const [sev, finding] = firstTable(md).columnWidths;
     if (!sev || !finding) throw new Error("expected two widths");
     expect(sev.magnitude).toBeGreaterThanOrEqual(75);
-    // But it must not run away with the page — the long column still dominates.
     expect(finding.magnitude).toBeGreaterThan(sev.magnitude);
     expect(sev.magnitude + finding.magnitude).toBeLessThanOrEqual(468);
   });
 
   test("when columns can't all fit, short columns hold the minimum and nothing overflows", () => {
-    // Two wide columns plus two short ones over-subscribe the page.
     const wide = "y".repeat(300);
     const md = ["| A | B | C | D |", "|---|---|---|---|", `| ${wide} | ${wide} | ok | ok |`, ""].join("\n");
     const widths = firstTable(md).columnWidths.map((d) => d.magnitude);

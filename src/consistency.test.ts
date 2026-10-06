@@ -4,11 +4,6 @@ import { type DocsClient, executeDocument } from "./executor";
 import { parseMarkdown } from "./parse";
 import { planDocument } from "./plan";
 
-/**
- * Answers every read with each table inserted so far, as a top-level element
- * where it went: Docs puts a newline before a table, so it starts one index
- * later, with its cells' paragraphs two indices apart from there.
- */
 class TableEchoClient implements DocsClient {
   batches: DocRequest[][] = [];
   createDocument(): Promise<{ documentId: string }> {
@@ -29,7 +24,6 @@ class TableEchoClient implements DocsClient {
           return { startIndex: at - 1, endIndex: at + 1, content: [{ startIndex: at, endIndex: at + 1 }] };
         }),
       }));
-      // A wide end leaves room for whatever the cells are filled with, so nothing after the table overlaps it.
       return [{ startIndex: start, endIndex: start + 1000, table: { tableRows } }];
     });
     tables.sort((a, b) => (a.startIndex ?? 0) - (b.startIndex ?? 0));
@@ -64,7 +58,6 @@ const CONTEXTS: Record<string, (element: string) => string> = {
   "as a list item's later block": (e) => `- item\n\n${indent(e, "  ")}`,
 };
 
-/** A GFM table cell holds a single line of inline content, so only inline elements can sit in one. */
 const INLINE_CONTEXTS: Record<string, (element: string) => string> = {
   "in a table's body cell": (e) => `| head |\n|---|\n| ${e.trim()} |\n`,
 };
@@ -94,14 +87,12 @@ async function render(markdown: string): Promise<DocRequest[]> {
   return client.batches.flat();
 }
 
-/** Spacing and list-item indents follow a block's position by design; everything else is the element's own. */
 const POSITIONAL = new Set(["spaceAbove", "spaceBelow", "indentStart", "indentFirstLine"]);
 
 function own(style: object): object {
   return Object.fromEntries(Object.entries(style).filter(([key]) => !POSITIONAL.has(key)));
 }
 
-/** The paragraph, text and bullet styling of whatever was inserted with the word "element" in it. */
 function textElementStyling(requests: DocRequest[]): unknown[] {
   const spans = requests.flatMap((r) =>
     "insertText" in r && r.insertText.text.toLowerCase().includes("element")
@@ -112,7 +103,6 @@ function textElementStyling(requests: DocRequest[]): unknown[] {
   return requests.flatMap((r): unknown[] => {
     if ("updateParagraphStyle" in r && inElement(r.updateParagraphStyle.range.startIndex)) {
       const style = own(r.updateParagraphStyle.paragraphStyle);
-      // A request setting only positional fields, such as a list item's later-block indent, is the position's.
       return Object.keys(style).length > 0 ? [{ paragraph: style }] : [];
     }
     if ("updateTextStyle" in r && inElement(r.updateTextStyle.range.startIndex)) {
@@ -126,7 +116,6 @@ function textElementStyling(requests: DocRequest[]): unknown[] {
   });
 }
 
-/** The styling of the last table inserted, the element itself, with indices and widths left out. */
 function tableElementStyling(requests: DocRequest[]): unknown[] {
   const inserts = requests.flatMap((r) => ("insertTable" in r ? [r.insertTable] : []));
   const last = inserts.at(-1);
@@ -149,7 +138,6 @@ function tableElementStyling(requests: DocRequest[]): unknown[] {
     .concat([{ shape: { rows: last.rows, columns: last.columns } }]);
 }
 
-/** Each inserted text's paragraph alignment, keyed by the text. */
 function alignments(requests: DocRequest[]): Record<string, string | undefined> {
   return Object.fromEntries(
     requests.flatMap((r) => {
@@ -198,7 +186,6 @@ describe("table cells", () => {
 describe("every element renders the same in every context", () => {
   for (const [element, markdown] of Object.entries(TEXT_ELEMENTS)) {
     for (const [context, wrap] of Object.entries(CONTEXTS)) {
-      // A list nested in a list item is a nested list, with its own documented rules.
       if (context === "as a list item's later block" && element.endsWith("list")) continue;
       test(`a ${element} ${context}`, async () => {
         const expected = textElementStyling(await render(markdown));

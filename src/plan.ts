@@ -2,62 +2,41 @@ import type { AlignType, List, ListItem, Root, RootContent } from "mdast";
 import type { BulletPreset } from "./docs";
 import { buildTablePlan, type TablePlan } from "./table";
 
-/**
- * Where a block sits within its container. A list item exists in Docs only as
- * bullets and indents on its paragraphs, so every block carries its list
- * placement for the converter to render.
- */
 export interface BlockContext {
   list?: ListPlacement;
   cell?: CellPlacement;
 }
 
-/** A table cell's paragraph: its row and column decide its weight and alignment. */
 export interface CellPlacement {
   header: boolean;
   align: AlignType;
 }
 
 export interface ListPlacement {
-  /** Identifies the outermost list, so its consecutive items share one bullet range. */
   id: number;
-  /** 0 for an item of the outermost list, one more per nested list. */
   depth: number;
-  /** The outermost list's preset; undefined for a task list, whose items carry a glyph instead. */
   preset?: BulletPreset;
-  /** The item's own list is loose (blank lines between items), so its items space like paragraphs. */
   loose: boolean;
-  /** True on an item's first block, which carries the item's marker. */
   first: boolean;
-  /** The glyph leading a task-list item's first block. */
   prefix?: string;
 }
 
-/** A block the converter renders as paragraphs: anything but a quote or a table. */
 export interface Leaf {
   node: RootContent;
   context: BlockContext;
 }
 
-/** A run of consecutive leaves, converted linearly at execution time. */
 export interface LinearSegment {
   kind: "linear";
   leaves: Leaf[];
-  /** True when this run immediately follows a table or quote, so its first block needs space above it. */
   afterTable: boolean;
 }
 
-/** A table, resolved against a live document GET at execution time. */
 export interface TableSegment {
   kind: "table";
   table: TablePlan;
 }
 
-/**
- * A blockquote. Docs has no quote style, and paragraph borders join only across
- * identical indents, so a quote is a one-cell table: the only Docs container
- * that holds any block under one continuous accent.
- */
 export interface QuoteSegment {
   kind: "quote";
   segments: Segment[];
@@ -78,13 +57,6 @@ interface ListWalk {
   item: ItemState;
 }
 
-/**
- * Split a document into an ordered tree of segments. List items are walked at
- * any depth into leaves that remember their list placement; tables and quotes
- * become their own segments wherever they sit, because their cell indices only
- * exist after insertion. This is the boundary that lets the executor interleave
- * deterministic batches with the insert-then-read-back table flow.
- */
 export function planDocument(root: Root): Segment[] {
   let nextListId = 0;
 
@@ -128,11 +100,7 @@ export function planDocument(root: Root): Segment[] {
       const task = isTaskList(list);
       const id = parent ? parent.id : nextListId++;
       const depth = parent ? parent.depth + 1 : 0;
-      // The outermost list decides the preset for the whole nested range; nested
-      // lists inherit it, and a task list's range has none.
       const preset = parent ? parent.preset : outermostPreset(list, task);
-      // CommonMark makes a list loose when a blank line separates its items or
-      // the blocks inside any one item.
       const loose = list.spread === true || list.children.some((item) => item.spread === true);
       for (const item of list.children) {
         const walk: ListWalk = {
@@ -142,8 +110,6 @@ export function planDocument(root: Root): Segment[] {
           loose,
           item: { prefix: itemPrefix(item, task), started: false },
         };
-        // An item's marker rides on a paragraph, so an empty item, or one that
-        // opens with a table, quote or list, gets an empty first one to carry it.
         const opener = item.children[0]?.type;
         const needsMarker = opener === undefined || opener === "table" || opener === "blockquote" || opener === "list";
         const children: RootContent[] = needsMarker
@@ -166,8 +132,6 @@ export function planDocument(root: Root): Segment[] {
             walkList(node, list);
             break;
           case "thematicBreak":
-            // Ignored: a bordered rule looks poor in Docs, and headings already
-            // carry space above, so a thematic break contributes nothing.
             break;
           default:
             emit(node, list);
@@ -183,23 +147,15 @@ export function planDocument(root: Root): Segment[] {
   return collect(root.children);
 }
 
-/** A GFM task list — at least one item carries a boolean checked state. */
 function isTaskList(list: List): boolean {
   return list.children.some((item) => typeof item.checked === "boolean");
 }
 
-/**
- * Leading text marker for an item in a task list (which uses no bullet preset):
- * a checkbox glyph preserving checked state, or a plain bullet for a non-task
- * item mixed into the list. Non-task lists return undefined — their marker comes
- * from a `createParagraphBullets` preset instead.
- */
 function itemPrefix(item: ListItem, taskList: boolean): string | undefined {
   if (typeof item.checked === "boolean") return item.checked ? "☑ " : "☐ ";
   return taskList ? "• " : undefined;
 }
 
-/** The preset for an outermost list's whole nested range; a task list's items carry glyphs instead. */
 function outermostPreset(list: List, task: boolean): BulletPreset | undefined {
   if (task) return undefined;
   return list.ordered ? "NUMBERED_DECIMAL_ALPHA_ROMAN" : "BULLET_DISC_CIRCLE_SQUARE";

@@ -5,7 +5,7 @@ description: Render a Markdown file through the real md2gd CLI into a scratch Go
 
 # Verify a rendered Google Doc
 
-`bun run verify` proves the requests md2gd sends. It does not show what Google makes of them, so check a conversion change by running it for real and looking at the doc it produces. `bun run render` drives `src/cli.ts` end to end and saves evidence locally.
+`bun run check` proves the requests md2gd sends. It does not show what Google makes of them, so check a conversion change by running it for real and looking at the doc it produces. `bun run render` drives `src/cli.ts` end to end and saves evidence locally.
 
 ## Before you run
 

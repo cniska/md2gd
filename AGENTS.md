@@ -10,13 +10,13 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 2. Every config value and external input is validated through Zod before entering the type system.
 3. OAuth requests only the `drive` scope — the workflow places docs in and updates docs the user did not create, which `drive.file` cannot reach, and `drive` also covers the Docs edits — never a broader or extra scope (AU-3). Tokens and secrets are never committed.
 4. Google Docs offsets are UTF-16 code units (emoji are 2 units); all index arithmetic must account for this (`docs/architecture.md`).
-5. Every SPEC §2.5 edge case and §3.1 styling pain point has a unit test, and every §7 criterion has an acceptance test or a todo; the citation check in `bun test` ties the criteria to the requirements and the tests. `bun run verify` must be green before every commit.
+5. Every SPEC §2.5 edge case and §3.1 styling pain point has a unit test, and every §7 criterion has an acceptance test or a todo; the citation check in `bun test` ties the criteria to the requirements and the tests. `bun run check` must be green before every commit.
 
 ## Workflow
 
 - Run locally: `bun run start -- <file.md>`.
 - Compile a standalone binary: `bun build --compile src/cli.ts --outfile md2gd`.
-- Verify (lint → typecheck → test → audit): `bun run verify`.
+- Check (lint → typecheck → test → audit): `bun run check`.
 - Prove the spec's criteria against a scripted Google: `bun run test:acceptance` (compiles the binary first).
 - See a change in a real Google Doc: `bun run render -- <file.md>`; the recipe (credentials, evidence, cleanup) is `.claude/skills/md2gd-verify-doc/SKILL.md`. Run it after conversion, styling, or executor changes.
 - Cut a release: bump `version` in `package.json`, commit `chore: release vX.Y.Z`, and push a matching `vX.Y.Z` tag — `.github/workflows/release.yml` builds the binaries, writes their checksums, and publishes the GitHub release. There is no local release script.
@@ -24,12 +24,12 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 ## Code
 
 - No transitional architecture: land the canonical contract and single source of truth.
-- No spec IDs (`FR-`/`ST-`/`NF-`/`AU-`) in code, comments, or test names — describe behavior in plain terms; SPEC.md is the reference for why. `bun run lint` enforces it.
+- No spec IDs (`FR-`/`ST-`/`NF-`/`AU-`) in code or test names — describe behavior in plain terms; SPEC.md is the reference for why. `bun run lint` enforces it.
 - Define string unions / shared types as a Zod schema first, infer the TS type from it.
 - Flat `src/`, colocated `*.test.ts`. No re-export layers.
 - Factory naming: `create*`. Prefer direct `export const` over alias + `export { ... }`.
 - `switch` exhaustiveness: a `default` branch with an `unreachable`/never check when applicable.
-- Comments explain only the *why* a name, type, or test can't encode — never the *what*; no banner or separator comments.
+- Code carries no comments: a why goes into a name, a test, or `docs/architecture.md`. A tool directive (a lint or type suppression) carries its reason on its own line. The no-comments gate holds it on commit and in CI.
 
 ## Style
 
@@ -39,14 +39,14 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 
 ## Testing
 
-- `bun test`. Unit tests are pure and offline: mock boundary effects (filesystem, network, Google APIs), never exercise them. The live Google check (`bun run render`) stays out of `verify`.
+- `bun test`. Unit tests are pure and offline: mock boundary effects (filesystem, network, Google APIs), never exercise them. The live Google check (`bun run render`) stays out of `check`.
 - The AST → `batchUpdate` mapping is tested by asserting the requests produced, not just that code runs.
 - Acceptance tests (`acceptance/*.acceptance.ts`) run the compiled binary against the scripted Google in `acceptance/support/`, each in its own temporary home. A test's name starts with the criteria it proves; a case exposing a known bug is `test.failing`, one the suite cannot reach is `test.todo`.
 - Drive conversion changes test-first (red-green-refactor).
 
 ## Commits
 
-- `type(scope): description` — types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`. Single-line subject, no body, under 72 characters, ASCII only. No issue references or spec IDs in the subject.
+- `type(scope): description` — types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`. Single-line subject, no body, at most 50 characters, ASCII only; `.githooks/commit-msg` holds it. No issue references or spec IDs in the subject.
 
 ## Process
 

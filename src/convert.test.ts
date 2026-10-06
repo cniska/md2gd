@@ -15,7 +15,6 @@ function leavesOf(markdown: string): Leaf[] {
   return planDocument(parseMarkdown(markdown)).flatMap((segment) => (segment.kind === "linear" ? segment.leaves : []));
 }
 
-/** A document of leaves only, converted from the body's first index. */
 function convert(root: Root): DocRequest[] {
   const segments = planDocument(root);
   if (segments.some((segment) => segment.kind !== "linear")) throw new Error("fixture holds a table or quote");
@@ -56,7 +55,6 @@ describe("convert paragraphs and headings", () => {
     const heading = styles.find((s) => s.updateParagraphStyle.paragraphStyle.namedStyleType === "HEADING_2");
     expect(heading).toBeDefined();
     if (!heading) throw new Error("no HEADING_2 style");
-    // Range covers "Scope\n" starting at the body's first index.
     expect(heading.updateParagraphStyle.range).toEqual({ startIndex: 1, endIndex: 7 });
     expect(heading.updateParagraphStyle.fields).toContain("namedStyleType");
   });
@@ -77,14 +75,11 @@ describe("convert paragraphs and headings", () => {
   test("cursor advances across blocks so ranges are contiguous and non-overlapping", () => {
     const reqs = convert(parseMarkdown("# Title\n\nBody text here.\n"));
     const [heading, body] = paragraphStyles(reqs);
-    // "Title\n" = indices 1..7, then "Body text here.\n" = 7..23.
     expect(heading?.updateParagraphStyle.range).toEqual({ startIndex: 1, endIndex: 7 });
     expect(body?.updateParagraphStyle.range).toEqual({ startIndex: 7, endIndex: 23 });
   });
 
   test("a surrogate-pair emoji counts as two index units", () => {
-    // 🟠 (U+1F7E0) is a surrogate pair = 2 UTF-16 code units. "🟠 High\n" is
-    // 2 + 1 + 4 + 1 = 8 units, so the paragraph range must end at 9, not 8.
     const reqs = convert(parseMarkdown("🟠 High\n"));
     const [style] = paragraphStyles(reqs);
     expect(style?.updateParagraphStyle.range).toEqual({ startIndex: 1, endIndex: 9 });
@@ -93,7 +88,6 @@ describe("convert paragraphs and headings", () => {
 
 describe("convert inline formatting", () => {
   test("bold text becomes a bold text-style run over just the bold span", () => {
-    // "a **bold** c\n" -> "a bold c\n"; "bold" is at indices 3..7.
     const reqs = convert(parseMarkdown("a **bold** c\n"));
     expect(insertedText(reqs)).toBe("a bold c\n");
     const bold = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.bold);
@@ -105,10 +99,7 @@ describe("convert inline formatting", () => {
 
   test("inline code keeps markdown-significant characters literal and monospace", () => {
     const reqs = convert(parseMarkdown("key `sk_test_` here\n"));
-    // The underscores are not emphasis: the literal token survives verbatim.
     expect(insertedText(reqs)).toBe("key sk_test_ here\n");
-    // The code run is distinguished by its background shade (the base body font
-    // run also carries weightedFontFamily).
     const code = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.backgroundColor);
     expect(code).toBeDefined();
     if (!code) throw new Error("no code run");
@@ -128,9 +119,7 @@ describe("convert inline formatting", () => {
 
   test("stacked lines join into one paragraph via a line break, not a new paragraph", () => {
     const reqs = convert(parseMarkdown("**Date:** July 5\n**Class:** Confidential\n"));
-    // One paragraph => exactly one paragraph-style request.
     expect(paragraphStyles(reqs)).toHaveLength(1);
-    // The two lines are joined by a vertical-tab line break, not "\n".
     const text = insertedText(reqs);
     expect(text).toContain(String.fromCharCode(0x0b));
     expect(text).toBe(`Date: July 5${String.fromCharCode(0x0b)}Class: Confidential\n`);
@@ -157,7 +146,6 @@ describe("convert lists", () => {
   test("list items are tightly spaced but the last item restores space after the list", () => {
     const styles = paragraphStyles(convert(parseMarkdown("- one\n- two\n- three\n")));
     const below = styles.map((s) => s.updateParagraphStyle.paragraphStyle.spaceBelow?.magnitude ?? 0);
-    // Interior items are tight; the final item gets the larger after-list space.
     expect(below[0]).toBeLessThan(below[below.length - 1] ?? 0);
     expect(below[below.length - 1]).toBeGreaterThanOrEqual(8);
   });
@@ -169,7 +157,6 @@ describe("convert lists", () => {
       );
     expect(below("- one\n- two\n- three\n")).toEqual([2, 2, 8]);
     expect(below("- one\n\n- two\n\n- three\n")).toEqual([8, 8, 8]);
-    // A blank line inside an item makes the whole list loose too, per CommonMark.
     expect(below("- one\n\n  more\n- two\n")).toEqual([8, 8, 8]);
   });
 
@@ -189,7 +176,6 @@ describe("convert lists", () => {
 
   test("a nested list indents with a tab and is covered by one bullet request", () => {
     const reqs = convert(parseMarkdown("- a\n  - b\n"));
-    // "a\n" then "\tb\n": the nested item carries one leading tab for depth.
     expect(insertedText(reqs)).toBe("a\n\tb\n");
     const bs = bullets(reqs);
     expect(bs).toHaveLength(1);
@@ -197,16 +183,11 @@ describe("convert lists", () => {
   });
 
   test("end index discounts the tabs bulleting will strip, so a following table lands", () => {
-    // Nested list: "a\n\tb\n" is 5 code units from index 1, but bulleting strips
-    // the one leading tab, so the real body ends at 5, not 6. A table placed at
-    // the raw end would be past the segment's end and fail to insert.
     expect(convertLeaves(leavesOf("- a\n  - b\n"), 1).endIndex).toBe(5);
-    // A flat list has no nesting tabs, so its end index is unchanged.
     expect(convertLeaves(leavesOf("- a\n- b\n"), 1).endIndex).toBe(5);
   });
 
   test("a task list keeps its tabs (no bullet preset strips them), so the end index counts them", () => {
-    // A task list uses glyphs, not a bullet preset, so nothing strips the tab.
     const reqs = convertLeaves(leavesOf("- [ ] a\n  - [ ] b\n"), 1);
     expect(insertedText(reqs.requests)).toBe("☐ a\n\t☐ b\n");
     expect(reqs.endIndex).toBe(1 + "☐ a\n\t☐ b\n".length);
@@ -214,15 +195,12 @@ describe("convert lists", () => {
 
   test("a task list renders checked and unchecked glyphs, preserving state", () => {
     const reqs = convert(parseMarkdown("- [ ] todo\n- [x] done\n"));
-    // Checked state survives as a leading glyph rather than being dropped.
     expect(insertedText(reqs)).toBe("☐ todo\n☑ done\n");
-    // No checkbox bullet: the glyph is the marker (the API can't pre-check one).
     expect(bullets(reqs)).toHaveLength(0);
   });
 
   test("a plain item mixed into a task list still gets a marker", () => {
     const reqs = convert(parseMarkdown("- [x] done\n- plain item\n"));
-    // The plain item is prefixed with a bullet glyph, never left unmarked.
     expect(insertedText(reqs)).toBe("☑ done\n• plain item\n");
     expect(bullets(reqs)).toHaveLength(0);
   });
@@ -233,11 +211,9 @@ describe("convert lists", () => {
     expect(bs).toHaveLength(2);
     const [first, second] = bs;
     if (!first || !second) throw new Error("expected two bullet requests");
-    // Later list first, so tab-stripping never invalidates an earlier range.
     expect(first.createParagraphBullets.range.startIndex).toBeGreaterThan(
       second.createParagraphBullets.range.startIndex,
     );
-    // And they are the final requests in the batch.
     const lastTwo = reqs.slice(-2);
     expect(lastTwo.every((r) => "createParagraphBullets" in r)).toBe(true);
   });
@@ -246,7 +222,6 @@ describe("convert lists", () => {
 describe("convert other block types", () => {
   test("a fenced code block is monospace, shaded, and keeps its lines in one block", () => {
     const reqs = convert(parseMarkdown("```\nconst x = 1\nmore\n```\n"));
-    // Internal newline becomes an in-paragraph line break, not a new paragraph.
     expect(insertedText(reqs)).toBe(`const x = 1${String.fromCharCode(0x0b)}more\n`);
     const mono = textStyles(reqs).find((r) => r.updateTextStyle.textStyle.weightedFontFamily);
     expect(mono).toBeDefined();
@@ -315,10 +290,8 @@ describe("convert typography and styling coverage", () => {
     const styles = paragraphStyles(reqs);
     expect(styles).toHaveLength(1);
     const style = styles[0]?.updateParagraphStyle.paragraphStyle;
-    // Stays body text (out of the outline), still bold.
     expect(style?.namedStyleType).toBe("NORMAL_TEXT");
     expect(textStyles(reqs).some((r) => r.updateTextStyle.textStyle.bold)).toBe(true);
-    // Caption spacing: space above to separate, tight below to group with the table.
     expect(style?.spaceAbove?.magnitude).toBeGreaterThan(style?.spaceBelow?.magnitude ?? 0);
     expect(style?.keepWithNext).toBe(true);
   });
@@ -348,7 +321,6 @@ describe("convert typography and styling coverage", () => {
     const { requests } = convertLeaves(leavesOf("## Next\n"), 1, { afterTable: true });
     const first = requests.find((r) => "updateParagraphStyle" in r);
     const style = first && "updateParagraphStyle" in first ? first.updateParagraphStyle : undefined;
-    // HEADING_2's 16pt is not reduced to the 10pt floor.
     expect(style?.paragraphStyle.spaceAbove?.magnitude).toBeGreaterThan(10);
   });
 
@@ -382,7 +354,6 @@ describe("convert blocks nested in list items", () => {
       .paragraphStyle;
   };
   const ranges = (reqs: ReturnType<typeof convert>) => bullets(reqs).map((b) => b.createParagraphBullets.range);
-  /** An item's later blocks: bullets removed, then indented, both after the list is bulleted, in final indices. */
   const laterBlocks = (reqs: ReturnType<typeof convert>): object[] => {
     const lastBullet = reqs.map((r) => "createParagraphBullets" in r).lastIndexOf(true);
     return reqs.slice(lastBullet + 1).flatMap((r): object[] => {

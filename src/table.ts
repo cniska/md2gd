@@ -4,26 +4,16 @@ import { pt } from "./docs";
 import { inlineRuns } from "./inline";
 import { CELL_PADDING, MIN_COLUMN_WIDTH_PT } from "./style";
 
-/** A table cell's inline content, and its plain text for sizing the column. */
 export interface CellPlan {
   content: PhrasingContent[];
   text: string;
 }
 
-/**
- * A structured, index-free description of a table. The send layer inserts the
- * empty table, reads back the real cell indices, then fills and styles cells —
- * so this plan carries no absolute document indices and no widths, which depend
- * on the container the table lands in.
- */
 export interface TablePlan {
   rows: number;
   columns: number;
-  /** Whether the first row is a header (GFM tables always have one). */
   header: boolean;
-  /** Each column's alignment from the delimiter row; null where the column sets none. */
   align: AlignType[];
-  /** Cell content indexed as cells[row][column]. */
   cells: CellPlan[][];
 }
 
@@ -38,8 +28,6 @@ export function buildTablePlan(table: Table): TablePlan {
   const rows = cells.length;
   const columns = cells.reduce((max, row) => Math.max(max, row.length), 0);
 
-  // Normalise ragged rows so every row has `columns` cells. Each padding cell is
-  // a fresh object, never a shared reference.
   for (const row of cells) {
     while (row.length < columns) row.push(emptyCell());
   }
@@ -48,18 +36,13 @@ export function buildTablePlan(table: Table): TablePlan {
   return { rows, columns, header: rows > 0, align, cells };
 }
 
-// Approximate glyph advances at the 11pt body size, deliberately generous so a
-// short column is never floored too narrow to hold its content on one line.
-// Emoji are roughly twice a normal glyph; a space is much narrower.
 const CHAR_WIDTH_PT = 7;
 const SPACE_WIDTH_PT = 3.5;
 const EMOJI_WIDTH_PT = 13;
 const EMOJI = /\p{Extended_Pictographic}/u;
 
-/** A column's floor never passes this share of the width, so one column can't starve the rest. */
 const NATURAL_FLOOR_CAP_SHARE = 0.5;
 
-/** Estimated single-line width of a string at the body size, counting emoji as wide. */
 function estimatedTextWidth(text: string): number {
   let width = 0;
   for (const ch of text) {
@@ -70,23 +53,12 @@ function estimatedTextWidth(text: string): number {
   return width;
 }
 
-/** The width a column needs to hold its widest cell on one line, floored and capped. */
 function naturalWidth(cells: CellPlan[][], col: number, contentWidth: number): number {
   const longest = Math.max(0, ...cells.map((row) => estimatedTextWidth(row[col]?.text ?? "")));
   const needed = longest + 2 * CELL_PADDING.magnitude;
   return Math.min(Math.max(MIN_COLUMN_WIDTH_PT, needed), contentWidth * NATURAL_FLOOR_CAP_SHARE);
 }
 
-/**
- * Weight each column by its longest cell, then correct for fill-in columns. A
- * column whose body cells are all blank is a form field waiting to be written
- * in, not a narrow column: weighting it by its header alone hands the page to
- * the label column and leaves nothing to write in. Its need is unknown, so it
- * takes the average weight of the columns that do carry content — never less
- * than its own header. A table whose body is entirely blank is a form in full:
- * nothing distinguishes its columns but their labels, which say nothing about
- * how much will be written under them, so they share the page equally.
- */
 function fillInAdjustedWeights(cells: CellPlan[][], columns: number): number[] {
   const weights = Array.from({ length: columns }, (_, col) =>
     Math.max(1, ...cells.map((row) => row[col]?.text.length ?? 0)),
@@ -107,15 +79,6 @@ function fillInAdjustedWeights(cells: CellPlan[][], columns: number): number[] {
   return weights.map((w, col) => (filled.has(col) ? w : Math.max(w, average)));
 }
 
-/**
- * Distribute the container's content width across columns in proportion to each
- * column's longest cell text, but never below the width that column needs to
- * hold its widest cell on a single line. A short-content column (e.g. a status
- * or severity column beside long descriptions) is pinned to that natural width
- * so its values don't wrap; the remaining width is shared among the rest by
- * weight, so long-text columns still get the space they need. Docs clips a table
- * wider than its container rather than shrinking it, so the widths must sum to it.
- */
 export function columnWidths(plan: TablePlan, contentWidth: number): Dimension[] {
   const { cells, columns } = plan;
   if (columns === 0) return [];
@@ -123,11 +86,6 @@ export function columnWidths(plan: TablePlan, contentWidth: number): Dimension[]
   const weights = fillInAdjustedWeights(cells, columns);
   const floors = Array.from({ length: columns }, (_, col) => naturalWidth(cells, col, contentWidth));
 
-  // If the columns' natural floors already exceed the page, we can't grant every
-  // column its full natural width without overflowing. Guarantee the readable
-  // minimum per column (when the page allows), then share the remaining width by
-  // how much each column wanted beyond the minimum — so short columns stay at the
-  // floor rather than being scaled into a sliver, and nothing overflows.
   const floorSum = floors.reduce((sum, f) => sum + f, 0);
   if (floorSum >= contentWidth) {
     if (columns * MIN_COLUMN_WIDTH_PT >= contentWidth) {
@@ -144,12 +102,6 @@ export function columnWidths(plan: TablePlan, contentWidth: number): Dimension[]
   const floorOf = (i: number): number => floors[i] ?? MIN_COLUMN_WIDTH_PT;
   let remaining = contentWidth;
 
-  // Pin any column whose weighted share falls below its natural floor, one per
-  // pass. Pinning consumes width, so `remaining` and the flexible weight sum must
-  // be recomputed after each pin: evaluating several pins against one stale weight
-  // sum over-pins and leaves the table narrower than the page. Whatever survives
-  // as flexible then absorbs all the remaining width, so the columns always fill
-  // the full content width.
   for (let changed = true; changed; ) {
     changed = false;
     const weightSum = [...flexible].reduce((sum, i) => sum + weightOf(i), 0);

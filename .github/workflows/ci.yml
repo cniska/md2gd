@@ -15,16 +15,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  verify:
-    if: github.event_name != 'schedule'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-      - uses: jdx/mise-action@v5
-      - run: bun install --frozen-lockfile
-      - run: bun run verify
-
   acceptance:
     name: Acceptance
     if: github.event_name != 'schedule'

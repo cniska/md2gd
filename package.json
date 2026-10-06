@@ -34,7 +34,8 @@
     "test": "bun test",
     "test:acceptance": "bun build --compile src/cli.ts --outfile .acceptance/md2gd && bun test --concurrent --max-concurrency=4 ./acceptance/*.acceptance.ts",
     "audit": "bun audit",
-    "verify": "bun run lint && bun run typecheck && bun test && bun run audit"
+    "check": "bun run lint && bun run typecheck && bun test && bun run audit",
+    "prepare": "git config core.hooksPath .githooks"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.2",

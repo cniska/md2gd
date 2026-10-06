@@ -182,7 +182,7 @@ rm -rf ~/.config/md2gd         # full reset
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run `bun run verify` before every commit.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run `bun run check` before every commit.
 
 ## License
 

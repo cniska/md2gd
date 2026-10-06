@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { type FetchFn, fetchWithRetry } from "./http";
 
-/** Replies with each queued status in turn (an Error entry throws like a dropped connection). */
 function sequence(replies: (number | Error | Response)[]): { fetchFn: FetchFn; calls: () => number } {
   let i = 0;
   const fetchFn: FetchFn = () => {

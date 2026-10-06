@@ -29,25 +29,10 @@ interface BulletSpec {
 interface Context {
   requests: DocRequest[];
   bullets: BulletSpec[];
-  /**
-   * Where `createParagraphBullets` will strip leading nesting tabs, and how many.
-   * The cursor counts them (they exist while the requests run), but every index
-   * after one is that many code units smaller once the bullets are applied.
-   */
   tabStrips: { index: number; tabs: number }[];
-  /** The paragraph being emitted ends its container, so it takes the container's own final newline. */
   reuseNewline: boolean;
 }
 
-/**
- * Convert a run of planned leaves into `batchUpdate` requests placed from
- * `startIndex`, returning the index just past the inserted content so the
- * caller can continue after it (e.g. following a table).
- *
- * Text is inserted at an advancing cursor; styling requests reference absolute
- * indices. Offsets come from JS string length — UTF-16 code units, matching the
- * Docs API — so emoji (surrogate pairs) count correctly. Pure and offline.
- */
 export function convertLeaves(
   leaves: Leaf[],
   startIndex: number,
@@ -62,8 +47,6 @@ export function convertLeaves(
     const start = cursor;
     const first = i === 0;
     const last = i === leaves.length - 1;
-    // A table cell always keeps one paragraph of its own, so the last block of a
-    // cell is written into it rather than leaving an empty line below.
     ctx.reuseNewline = options.endsContainer === true && last;
     const spacing: Spacing = {
       flushAbove: first && options.startsContainer === true,
@@ -75,8 +58,6 @@ export function convertLeaves(
     cursor = appendLeaf(leaf, cursor, ctx, spacing);
     const paragraphEnd = ctx.reuseNewline ? cursor + 1 : cursor;
 
-    // A list's blocks share one bullet range, so Docs counts the list as one;
-    // an item's later blocks then lose their bullets below.
     const list = leaf.context.list;
     if (list?.preset) {
       if (openRange?.list === list.id && openRange.endIndex === start) {
@@ -91,17 +72,12 @@ export function convertLeaves(
     }
   }
 
-  // Bulleting strips the leading tabs used to signal nesting, which shifts every
-  // index after the list. Emitting bullet requests last and in reverse document
-  // order keeps each range valid when its request runs.
   for (const b of [...ctx.bullets].sort((a, z) => z.startIndex - a.startIndex)) {
     ctx.requests.push({
       createParagraphBullets: { range: { startIndex: b.startIndex, endIndex: b.endIndex }, bulletPreset: b.preset },
     });
   }
 
-  // An item's later blocks are unbulleted and indented under its text only once
-  // every bullet is in place, so their ranges are in post-strip indices.
   const stripped = (index: number): number =>
     ctx.tabStrips.reduce((sum, strip) => (strip.index < index ? sum + strip.tabs : sum), 0);
   for (const block of laterBlocks) {
@@ -119,17 +95,11 @@ export function convertLeaves(
   return { requests: ctx.requests, endIndex: cursor - stripped(cursor) };
 }
 
-/** Where a block sits among its neighbors, which decides the space around it. */
 interface Spacing {
-  /** First in a container: flush against its top edge, as rendered Markdown's first child is. */
   flushAbove: boolean;
-  /** Last in a container: flush against its bottom edge. */
   flushBelow: boolean;
-  /** First after a table, which carries no space below itself. */
   afterTable: boolean;
-  /** Last of a list, whose tight items would otherwise butt against what follows. */
   endsList: boolean;
-  /** Text in a tight list, which rendered Markdown sets without paragraph margins. */
   tightListText: boolean;
 }
 
@@ -155,9 +125,6 @@ function atLeast(own: Dimension | undefined, floor: Dimension): Dimension {
 function appendLeaf(leaf: Leaf, cursor: number, ctx: Context, spacing: Spacing): number {
   const { node, context } = leaf;
   const list = context.list;
-  // An item's first block carries its marker: leading tabs that set its nesting
-  // level, and a task item's glyph. Bulleting strips the tabs. A task list has no
-  // bullets, so its tabs stay and every block of an item keeps them as its column.
   const tabs = list ? "\t".repeat(list.depth) : "";
   const bulleted = list?.preset !== undefined;
   let lead = "";
@@ -185,13 +152,11 @@ function appendLeaf(leaf: Leaf, cursor: number, ctx: Context, spacing: Spacing):
   }
 }
 
-/** A block's paragraph style, and the text style its inline runs are layered over. */
 interface BlockStyle {
   paragraph: ParagraphStyleSpec;
   text: TextStyle;
 }
 
-/** A block's own style, from what it is alone; where it sits only changes its spacing. */
 function ownStyle({ node, context }: Leaf): BlockStyle {
   const cell = context.cell;
   return {
@@ -211,15 +176,8 @@ function ownParagraphStyle(node: RootContent): ParagraphStyleSpec {
   }
 }
 
-// Inline content a caption's bold may contain. A strong wrapping a link, image,
-// or code span is a bold link/code in prose, not a sub-label — so it's excluded.
 const PLAIN_BOLD_CONTENT = new Set(["text", "emphasis", "delete", "break"]);
 
-/**
- * A paragraph is a caption when every child is plain bold text (`**…**`), ignoring
- * whitespace-only text. Detected here rather than by lookahead because the caption
- * ends a linear segment and the table it introduces is the next segment.
- */
 function isBoldOnly(children: PhrasingContent[]): boolean {
   const meaningful = children.filter((child) => child.type !== "text" || child.value.trim().length > 0);
   return (
@@ -229,8 +187,6 @@ function isBoldOnly(children: PhrasingContent[]): boolean {
 }
 
 function appendCode(lead: string, node: Code, cursor: number, ctx: Context, style: BlockStyle): number {
-  // Internal newlines become in-paragraph line breaks so the whole block reads
-  // as one shaded region rather than many separately-shaded paragraphs.
   const body = node.value.replaceAll("\n", LINE_BREAK);
   const codeStart = cursor + lead.length;
   const styleRequests: DocRequest[] =
@@ -276,7 +232,6 @@ function emitParagraph(
 ): number {
   const text = ctx.reuseNewline ? body : `${body}\n`;
   const start = cursor;
-  // The paragraph always ends at a newline: its own, or the container's it reuses.
   const paragraphEnd = start + body.length + 1;
 
   if (text.length > 0) ctx.requests.push({ insertText: { text, location: { index: start } } });
@@ -287,8 +242,6 @@ function emitParagraph(
       range: { startIndex: start, endIndex: paragraphEnd },
     },
   });
-  // Apply the block's text style over the text, then the specific runs, so run
-  // styles (bold, monospace code, ...) win in their sub-ranges.
   if (body.length > 0) {
     ctx.requests.push({
       updateTextStyle: {

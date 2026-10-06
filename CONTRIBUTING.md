@@ -11,7 +11,7 @@ Thanks for your interest in md2gd.
 
 - Read `SPEC.md` first — it is the source of requirements (what, not how) — and `AGENTS.md` for conventions.
 - Build in thin vertical slices; drive conversion changes test-first.
-- Run `bun run verify` (lint → typecheck → tests → audit) before every commit. It must be green.
+- Run `bun run check` (lint → typecheck → tests → audit) before every commit. It must be green.
 
 ## Tests
 
@@ -21,7 +21,7 @@ Thanks for your interest in md2gd.
 
 ## Commits
 
-- Conventional commits: `type(scope): description`, single-line, under 72 characters.
+- Conventional commits: `type(scope): description`, single-line, at most 50 characters.
 
 ## Pull requests
 

@@ -16,8 +16,6 @@ describe("parseMarkdown", () => {
     expect(root.children).toHaveLength(1);
     const para = root.children[0];
     if (para.type !== "paragraph") throw new Error("expected paragraph");
-    // The two stacked lines are one paragraph joined by a break node, not two
-    // paragraphs and not a space-joined run-on.
     expect(para.children.some((c) => c.type === "break")).toBe(true);
   });
 });

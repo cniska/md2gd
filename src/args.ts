@@ -1,4 +1,3 @@
-/** A parsed command line. Pure data so parsing is unit-tested without I/O. */
 export type Command =
   | { kind: "help" }
   | { kind: "version" }
@@ -42,7 +41,6 @@ export function parseArgs(argv: string[]): Command {
     return { kind: "init", clientPath };
   }
 
-  // Otherwise the first argument is the input file, followed by options.
   let title: string | undefined;
   let open = false;
   let update = false;
@@ -69,8 +67,6 @@ export function parseArgs(argv: string[]): Command {
       links = value;
       i++;
     } else if (arg === "--update") {
-      // Optional argument: an explicit doc url/id if the next token isn't a flag,
-      // else a no-arg update that targets the doc previously made from this file.
       update = true;
       const next = argv[i + 1];
       if (next !== undefined && !next.startsWith("-")) {

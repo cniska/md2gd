@@ -4,19 +4,16 @@ import { executeDocument, updateDocument } from "./executor";
 import { parseMarkdown } from "./parse";
 import { planDocument } from "./plan";
 
-/** A4 with one-inch side margins: 595.28 − 2 × 72 = 451.28pt of content width. */
 const A4 = {
   pageSize: { width: { magnitude: 595.28, unit: "PT" as const }, height: { magnitude: 841.89, unit: "PT" as const } },
   marginLeft: { magnitude: 72, unit: "PT" as const },
   marginRight: { magnitude: 72, unit: "PT" as const },
 };
 
-/** Records calls in order; returns queued getDocument responses in order. */
 class MockClient {
   batches: DocRequest[][] = [];
   getCalls = 0;
   renames: { id: string; name: string }[] = [];
-  /** Ordered log of side-effecting calls, to assert read-before-destroy. */
   calls: string[] = [];
   constructor(private readonly getResponses: DocumentResource[] = []) {}
 
@@ -60,8 +57,6 @@ describe("executeDocument", () => {
   });
 
   test("a table is inserted, read back, then styled and filled", async () => {
-    // GET #1: the inserted 2x2 table with known cell content indices.
-    // GET #2: end-of-body lookup after fills.
     const tableGet: DocumentResource = {
       documentStyle: A4,
       body: {
@@ -79,35 +74,28 @@ describe("executeDocument", () => {
         ],
       },
     };
-    // The second read finds the same table and continues after its end.
     const client = new MockClient([tableGet, tableGet]);
 
     const md = "| H1 | H2 |\n|---|---|\n| a | b |\n";
     await executeDocument(client, "T", planDocument(parseMarkdown(md)));
 
-    // insertTable batch, then the style+fill batch.
     expect(client.batches).toHaveLength(2);
     expect(client.batches[0]?.[0]).toHaveProperty("insertTable");
 
     const styleFill = client.batches[1] ?? [];
-    // Column widths (one per column), padding (whole table), header shading.
     expect(styleFill.filter((r) => "updateTableColumnProperties" in r)).toHaveLength(2);
     expect(styleFill.some((r) => "updateTableCellStyle" in r && r.updateTableCellStyle.tableStartLocation)).toBe(true);
     expect(styleFill.some((r) => "updateTableCellStyle" in r && r.updateTableCellStyle.tableRange)).toBe(true);
-    // Rows are set not to split across page breaks.
     expect(
       styleFill.some((r) => "updateTableRowStyle" in r && r.updateTableRowStyle.tableRowStyle.preventOverflow),
     ).toBe(true);
 
-    // Cell fills are inserted in descending index order (last cell first).
     const inserts = styleFill.filter((r): r is Extract<DocRequest, { insertText: unknown }> => "insertText" in r);
     const indices = inserts.map((r) => r.insertText.location.index);
     expect(indices).toEqual([...indices].sort((a, b) => b - a));
-    // Highest-index cell (14) is filled before the lowest (3).
     expect(indices[0]).toBe(14);
     expect(indices.at(-1)).toBe(3);
 
-    // A cell's text fills the cell's own paragraph, which carries the cell paragraph style: no spacing.
     expect(inserts.map((r) => r.insertText.text)).toEqual(["b", "a", "H2", "H1"]);
     const cellParagraph = styleFill.find(
       (r) => "updateParagraphStyle" in r && r.updateParagraphStyle.range.startIndex === 3,
@@ -117,7 +105,6 @@ describe("executeDocument", () => {
     expect(cellParagraph.updateParagraphStyle.paragraphStyle.spaceBelow?.magnitude).toBe(0);
     expect(cellParagraph.updateParagraphStyle.paragraphStyle.spaceAbove?.magnitude).toBe(0);
 
-    // The columns fill the document's own page content width, never a fixed paper size.
     const widths = styleFill.flatMap((r) =>
       "updateTableColumnProperties" in r ? [r.updateTableColumnProperties.tableColumnProperties.width.magnitude] : [],
     );
@@ -125,7 +112,6 @@ describe("executeDocument", () => {
   });
 
   test("the injected paragraph before a table is pinned to a thin spacer", async () => {
-    // A table not at the body start (startIndex 5) has a preceding paragraph at [4,5).
     const tableGet: DocumentResource = {
       documentStyle: A4,
       body: {
@@ -155,11 +141,6 @@ describe("executeDocument", () => {
   });
 });
 
-/**
- * Answers every read with a one-cell table placed where the last `insertTable`
- * went: Docs puts a newline before the table, so it starts one index later, and
- * its cell's paragraph two indices after that.
- */
 class OneCellClient extends MockClient {
   override getDocument(_id: string): Promise<DocumentResource> {
     this.getCalls++;
@@ -194,7 +175,6 @@ describe("executeDocument quotes", () => {
       expect.arrayContaining(["borderLeft", "borderTop", "borderRight", "borderBottom", "paddingLeft"]),
     );
 
-    // The quote's text fills the cell's own paragraph rather than adding a line below it.
     expect(requests).toContainEqual({ insertText: { text: "quoted", location: { index: 4 } } });
   });
 
@@ -211,7 +191,6 @@ describe("executeDocument quotes", () => {
   test("a list inside a quote is bulleted inside the quote's cell", async () => {
     const client = await renderQuote("> intro\n>\n> 1. first\n> 2. second\n");
     const bullets = client.batches.flat().flatMap((r) => ("createParagraphBullets" in r ? [r] : []));
-    // The last item ends at the cell's own newline (22), so its paragraph runs to 23.
     expect(bullets.map((b) => b.createParagraphBullets.range)).toEqual([{ startIndex: 10, endIndex: 23 }]);
   });
 
@@ -273,7 +252,6 @@ describe("executeDocument quotes", () => {
         ],
       },
     };
-    // Reads: locate outer, locate inner, end of inner, end of outer.
     const client = new MockClient([outerOnly, outerTable(20), outerTable(20), outerTable(20)]);
     await executeDocument(client, "T", planDocument(parseMarkdown("> outer\n>\n> > inner\n")));
 
@@ -283,12 +261,9 @@ describe("executeDocument quotes", () => {
     const widths = requests.flatMap((r) =>
       "updateTableColumnProperties" in r ? [r.updateTableColumnProperties.tableColumnProperties.width.magnitude] : [],
     );
-    // The outer quote's contents start 8pt in, its padding, so the inner quote is that much narrower.
     expect(widths).toEqual([451.28, 443.28]);
     expect(client.getCalls).toBe(4);
 
-    // The outer cell ends with the inner quote, so the paragraph Docs keeps after it,
-    // at the inner quote's end (20), is pinned to the thin spacer.
     const spacer = requests.find((r) => "updateParagraphStyle" in r && r.updateParagraphStyle.range.startIndex === 20);
     expect(spacer && "updateParagraphStyle" in spacer ? spacer.updateParagraphStyle.range : undefined).toEqual({
       startIndex: 20,
@@ -299,13 +274,11 @@ describe("executeDocument quotes", () => {
   test("a quote after a quote is inserted where the first one ends", async () => {
     const client = await renderQuote("> first\n\n> second\n");
     const inserts = client.batches.flat().flatMap((r) => ("insertTable" in r ? [r.insertTable.location.index] : []));
-    // OneCellClient places the first quote's table at 2 and ends it at 6.
     expect(inserts).toEqual([1, 6]);
   });
 });
 
 describe("updateDocument", () => {
-  /** A populated body spanning [1, 30) — endIndex 30 means content ends at 29. */
   const populated: DocumentResource = {
     title: "Old title",
     body: { content: [{ startIndex: 1, endIndex: 30 }] },
@@ -315,7 +288,6 @@ describe("updateDocument", () => {
     const client = new MockClient([populated]);
     const segments = planDocument(parseMarkdown("# New\n\nBody.\n"));
     await updateDocument(client, "doc-x", "New", segments);
-    // The very first call must be the read.
     expect(client.calls[0]).toBe("getDocument");
     expect(client.calls.indexOf("getDocument")).toBeLessThan(client.calls.indexOf("batchUpdate"));
   });
@@ -327,7 +299,6 @@ describe("updateDocument", () => {
     const clearBatch = client.batches[0] ?? [];
     const del = clearBatch.find((r) => "deleteContentRange" in r);
     expect(del).toEqual({ deleteContentRange: { range: { startIndex: 1, endIndex: 29 } } });
-    // The surviving paragraph is reset to NORMAL_TEXT and stripped of bullets.
     const reset = clearBatch.find((r) => "updateParagraphStyle" in r);
     expect(reset).toBeDefined();
     expect(clearBatch.some((r) => "deleteParagraphBullets" in r)).toBe(true);
@@ -348,7 +319,6 @@ describe("updateDocument", () => {
     const client = new MockClient([populated]);
     await updateDocument(client, "doc-x", "New title", planDocument(parseMarkdown("Body.\n")));
     expect(client.renames).toEqual([{ id: "doc-x", name: "New title" }]);
-    // Rename happens only after the body is filled.
     expect(client.calls.lastIndexOf("batchUpdate")).toBeLessThan(client.calls.indexOf("renameDocument"));
   });
 
@@ -362,7 +332,6 @@ describe("updateDocument", () => {
     const client = new MockClient([populated]);
     await updateDocument(client, "doc-x", "Old title", planDocument(parseMarkdown("Body.\n")), "folder-9");
     expect(client.moves).toEqual([{ id: "doc-x", folderId: "folder-9" }]);
-    // Relocate happens after the read but before any destructive batch.
     expect(client.calls.indexOf("moveDocument")).toBeLessThan(client.calls.indexOf("batchUpdate"));
     expect(client.calls.indexOf("getDocument")).toBeLessThan(client.calls.indexOf("moveDocument"));
   });

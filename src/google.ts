@@ -21,23 +21,16 @@ export interface GoogleClientOptions {
   folderName?: string;
 }
 
-/** Shareable edit URL for a created document. */
 export function documentUrl(documentId: string): string {
   return `https://docs.google.com/document/d/${documentId}/edit`;
 }
 
-/**
- * A Drive files URL carrying `supportsAllDrives`, which every call touching a
- * caller-supplied id needs: without it Drive treats the client as My Drive-only
- * and answers 404 for anything living in a shared drive.
- */
 function driveUrl(path = "", params: Record<string, string> = {}): string {
   const url = new URL(googleEndpoint(`${DRIVE_API}${path}`));
   url.search = new URLSearchParams({ ...params, supportsAllDrives: "true" }).toString();
   return url.toString();
 }
 
-/** Pull Google's human-readable reason out of an error response body. */
 async function errorMessage(res: Response): Promise<string> {
   const text = await res.text();
   try {
@@ -48,7 +41,6 @@ async function errorMessage(res: Response): Promise<string> {
   }
 }
 
-/** DocsClient backed by the live Google Docs + Drive REST APIs. */
 export class GoogleDocsClient implements DocsClient {
   private readonly getToken: () => Promise<string>;
   private readonly fetchFn: FetchFn;
@@ -63,10 +55,6 @@ export class GoogleDocsClient implements DocsClient {
   }
 
   async createDocument(title: string, folderId?: string): Promise<{ documentId: string }> {
-    // Create the doc directly inside its parent folder via Drive. A Drive file's
-    // id is the Docs document id, so this avoids the add-parent-to-rooted-file
-    // move (which fails under Drive's single-parent model). The parent is the
-    // caller's `--folder` if given, else md2gd's own default folder.
     const parent = folderId ?? (await this.ensureFolder());
     try {
       const doc = await this.json(DriveFileSchema, "POST", driveUrl("", { fields: "id" }), {
@@ -94,13 +82,10 @@ export class GoogleDocsClient implements DocsClient {
   }
 
   async renameDocument(documentId: string, name: string): Promise<void> {
-    // The Docs document id is its Drive file id, so the title is renamed via Drive.
     await this.json(z.unknown(), "PATCH", driveUrl(`/${documentId}`), { name });
   }
 
   async moveDocument(documentId: string, folderId: string): Promise<void> {
-    // A Drive file has a single parent, so a move adds the new folder and removes
-    // the current one(s). Fetch the current parents first to know what to remove.
     const meta = await this.json(DriveParentsSchema, "GET", driveUrl(`/${documentId}`, { fields: "parents" }));
     const remove = meta.parents.join(",");
     const params: Record<string, string> = { addParents: folderId };

@@ -1,14 +1,5 @@
 import { z } from "zod";
 
-/**
- * Minimal typed subset of the Google Docs API `batchUpdate` request shapes we
- * emit. Field names and structures mirror the official reference:
- * https://developers.google.com/workspace/docs/api/reference/rest/v1/documents/request
- *
- * We model only what we use; the API accepts partial objects with a `fields`
- * mask naming which properties to apply.
- */
-
 export type Unit = "PT";
 
 export interface Dimension {
@@ -58,7 +49,6 @@ export interface ParagraphStyle {
   shading?: Shading;
   borderLeft?: ParagraphBorder;
   borderBottom?: ParagraphBorder;
-  /** Keep this paragraph on the same page as the one that follows it. */
   keepWithNext?: boolean;
 }
 
@@ -152,7 +142,6 @@ export interface UpdateTableColumnPropertiesRequest {
   };
 }
 
-/** A cell border; a zero width hides it. Unlike a paragraph border, it has no padding of its own. */
 export interface TableCellBorder {
   color: OptionalColor;
   width: Dimension;
@@ -188,14 +177,12 @@ export interface UpdateTableCellStyleRequest {
 
 export interface TableRowStyle {
   minRowHeight?: Dimension;
-  /** True if the row cannot overflow (split) across a page or column boundary. */
   preventOverflow?: boolean;
 }
 
 export interface UpdateTableRowStyleRequest {
   updateTableRowStyle: {
     tableStartLocation: { index: number };
-    /** Omitted to apply to every row in the table. */
     rowIndices?: number[];
     tableRowStyle: TableRowStyle;
     fields: string;
@@ -214,9 +201,6 @@ export type DocRequest =
   | UpdateTableCellStyleRequest
   | UpdateTableRowStyleRequest;
 
-// Minimal shape of a `documents.get` response — only what the executor reads.
-// Every field is optional because the API omits default values (a zero margin
-// arrives without its `magnitude`), and objects stay loose so new API fields pass.
 const ResponseDimensionSchema = z.looseObject({ magnitude: z.number().optional(), unit: z.string().optional() });
 
 export const DocStructuralElementSchema = z.looseObject({
@@ -260,17 +244,12 @@ export type DocTableCell = z.infer<typeof DocTableCellSchema>;
 export type DocumentStyle = z.infer<typeof DocumentStyleSchema>;
 export type DocumentResource = z.infer<typeof DocumentResourceSchema>;
 
-/** Index of the first insertable position in a freshly created document body. */
 export const BODY_START_INDEX = 1;
 
 export function pt(magnitude: number): Dimension {
   return { magnitude, unit: "PT" };
 }
 
-/**
- * Build a Docs API `fields` mask from a partial style object: the API applies
- * only the properties named here, so it must list exactly the keys that are set.
- */
 export function fieldMask(style: object): string {
   return Object.keys(style).join(",");
 }

@@ -91,7 +91,6 @@ describe("convertFile", () => {
     const src = `${dir}/docs/architecture.md`;
     await Bun.write(src, "# Arch\n\nSee the [schema](schema.md).\n");
 
-    // Capture the requests the linked run produces, so the live link is observable.
     class Recorder extends StubClient {
       requests: DocRequest[] = [];
       override batchUpdate(_id: string, requests: DocRequest[]): Promise<void> {
@@ -207,8 +206,6 @@ describe("updateFile", () => {
     const cfg = `${tmpdir()}/md2gd-adopt-${Date.now()}.json`;
     const md = `${tmpdir()}/adopt-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");
-    // Simulates adopting an explicitly-targeted doc: update once, then a no-arg
-    // update resolves to that same doc without re-passing the URL.
     await updateFile(md, {}, new StubClient(), "adopted-doc", cfg);
     expect(await resolveUpdateTarget(md, undefined, cfg)).toBe("adopted-doc");
   });

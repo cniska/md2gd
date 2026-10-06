@@ -4,10 +4,8 @@ import { buildAuthUrl, type ClientSecret, createPkce, exchangeCode, parseClientS
 import { openInBrowser } from "./open";
 import { saveToken } from "./tokens";
 
-/** How long to wait for the browser consent before giving up. */
 const CONSENT_TIMEOUT_MS = 300_000;
 
-/** Load the stored OAuth client secret, guiding the user to `init` if absent. */
 export async function loadStoredClientSecret(): Promise<ClientSecret> {
   const file = Bun.file(CLIENT_SECRET_PATH);
   if (!(await file.exists())) {
@@ -18,17 +16,11 @@ export async function loadStoredClientSecret(): Promise<ClientSecret> {
 
 async function storeClientSecret(clientPath: string): Promise<void> {
   const raw = await Bun.file(clientPath).text();
-  parseClientSecret(raw); // validate before persisting
+  parseClientSecret(raw);
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
-  // Write with owner-only perms atomically — no world-readable window.
   writeFileSync(CLIENT_SECRET_PATH, raw, { mode: 0o600 });
 }
 
-/**
- * One-time setup: optionally store a downloaded client secret, then run the
- * installed-app consent flow once and cache the resulting token. Interactive
- * (opens a browser, runs a loopback server) so it is verified by running.
- */
 export async function runInit(clientPath: string | undefined, log: (message: string) => void): Promise<void> {
   if (clientPath) await storeClientSecret(clientPath);
   const client = await loadStoredClientSecret();

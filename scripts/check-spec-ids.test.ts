@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { findSpecIds } from "./check-spec-ids";
 
-// Built at runtime so this file never trips the check it tests.
 const id = (family: string, n: string) => `${family}-${n}`;
 
 describe("findSpecIds", () => {

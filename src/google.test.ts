@@ -8,7 +8,6 @@ interface Call {
   body: unknown;
 }
 
-/** Records each call and replies with the next queued JSON body. */
 function recorder(responses: unknown[]): { calls: Call[]; fetchFn: FetchFn } {
   const calls: Call[] = [];
   let i = 0;
@@ -30,16 +29,12 @@ describe("documentUrl", () => {
 
 describe("GoogleDocsClient.createDocument", () => {
   test("creates the folder when absent, then creates the doc inside it", async () => {
-    const { calls, fetchFn } = recorder([
-      { files: [] }, // folder search: none
-      { id: "folder1" }, // folder create
-      { id: "doc9" }, // doc create
-    ]);
+    const { calls, fetchFn } = recorder([{ files: [] }, { id: "folder1" }, { id: "doc9" }]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
 
     const result = await client.createDocument("My Title");
     expect(result.documentId).toBe("doc9");
-    expect(calls[0]?.method).toBe("GET"); // folder search
+    expect(calls[0]?.method).toBe("GET");
     expect(calls[1]).toMatchObject({ method: "POST", body: { mimeType: "application/vnd.google-apps.folder" } });
     expect(calls[2]).toMatchObject({
       method: "POST",
@@ -51,7 +46,6 @@ describe("GoogleDocsClient.createDocument", () => {
     const { calls, fetchFn } = recorder([{ files: [{ id: "existing" }] }, { id: "d" }]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     await client.createDocument("T");
-    // Folder search (GET) then doc create (POST) — no folder-create POST.
     expect(calls.filter((c) => c.method === "POST")).toHaveLength(1);
     expect(calls.at(-1)?.body).toMatchObject({ parents: ["existing"] });
   });
@@ -61,7 +55,6 @@ describe("GoogleDocsClient.createDocument", () => {
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     const result = await client.createDocument("T", "chosen-folder");
     expect(result.documentId).toBe("docInFolder");
-    // Only the doc create — no folder search or folder create.
     expect(calls).toHaveLength(1);
     expect(calls[0]).toMatchObject({ method: "POST", body: { parents: ["chosen-folder"] } });
   });
@@ -79,7 +72,7 @@ describe("GoogleDocsClient.moveDocument", () => {
     const { calls, fetchFn } = recorder([{ parents: ["oldFolder"] }, {}]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     await client.moveDocument("doc9", "newFolder");
-    expect(calls[0]?.method).toBe("GET"); // fetch current parents
+    expect(calls[0]?.method).toBe("GET");
     expect(calls[1]?.method).toBe("PATCH");
     expect(calls[1]?.url).toContain("addParents=newFolder");
     expect(calls[1]?.url).toContain("removeParents=oldFolder");
@@ -89,7 +82,6 @@ describe("GoogleDocsClient.moveDocument", () => {
     let call = 0;
     const fetchFn: FetchFn = () => {
       call++;
-      // First call (GET parents) succeeds; the PATCH move fails.
       const status = call === 1 ? 200 : 404;
       const body = call === 1 ? { parents: ["old"] } : { error: { message: "File not found." } };
       return Promise.resolve(new Response(JSON.stringify(body), { status }));

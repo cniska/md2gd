@@ -13,14 +13,6 @@ const ATTEMPTS = 4;
 const BASE_DELAY_MS = 1000;
 const MAX_DELAY_MS = 30_000;
 
-/**
- * Fetch, retrying with exponential backoff as Google's API guidance asks of
- * clients. Rate limiting is always retried: Google rejects a rate-limited request
- * before it applies. Server errors and dropped connections are retried only for
- * requests other than POST — a POST (a Docs `batchUpdate`, a Drive create) may
- * already have applied, and resending it would duplicate content. Once retries
- * run out, the last response is returned for the caller to report.
- */
 export async function fetchWithRetry(
   fetchFn: FetchFn,
   url: string,
@@ -45,10 +37,6 @@ export async function fetchWithRetry(
   }
 }
 
-/**
- * Whether Google refused the request for rate limiting: a 429, or the 403 Drive
- * sends instead, told apart from a permission 403 by its error reason.
- */
 export async function isRateLimited(res: Response): Promise<boolean> {
   if (res.status === 429) return true;
   if (res.status !== 403) return false;
@@ -65,7 +53,6 @@ function backoff(attempt: number): number {
   return BASE_DELAY_MS * 2 ** (attempt - 1);
 }
 
-/** `Retry-After` as a wait in milliseconds, given either as seconds or as an HTTP date. */
 function retryAfter(res: Response): number | undefined {
   const header = res.headers.get("retry-after");
   if (!header) return undefined;

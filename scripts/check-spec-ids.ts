@@ -5,7 +5,6 @@ import { join } from "node:path";
 const ROOTS = ["src", "scripts"];
 const SPEC_ID = /\b(?:FR|ST|NF|AU|AC|TS)-\d+/;
 
-/** Line numbers (1-based) of the lines that name a spec ID. */
 export function findSpecIds(text: string): number[] {
   return text.split("\n").flatMap((line, i) => (SPEC_ID.test(line) ? [i + 1] : []));
 }
@@ -13,7 +12,6 @@ export function findSpecIds(text: string): number[] {
 async function main(): Promise<void> {
   const hits: string[] = [];
   for (const root of ROOTS) {
-    // A missing root would otherwise pass as clean.
     if (!existsSync(root)) throw new Error(`check-spec-ids: ${root}/ not found`);
     for (const path of new Bun.Glob("**/*.ts").scanSync(root)) {
       const file = join(root, path);

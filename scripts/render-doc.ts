@@ -54,10 +54,6 @@ export const DocumentSchema = z.looseObject({
   body: z.looseObject({ content: z.array(ElementSchema) }),
 });
 
-/**
- * A plain-text view of a document's structure, one line per paragraph, so an
- * agent can read heading levels, list nesting, and table shape without the raw JSON.
- */
 export function describeDocument(doc: z.infer<typeof DocumentSchema>): string {
   return [`title: ${doc.title}`, ...describeElements(doc.body.content, "")].join("\n");
 }
@@ -96,7 +92,6 @@ interface Args {
   passthrough: string[];
 }
 
-/** The harness's own arguments; null when they don't parse, so usage is shown. */
 export function parseCliArgs(argv: string[]): Args | null {
   let file: string | undefined;
   let rerender = false;
@@ -158,10 +153,6 @@ async function ensureScratchFolder(token: string): Promise<string> {
   return z.object({ id: z.string() }).parse(await created.json()).id;
 }
 
-/**
- * A throwaway HOME holding a copy of the credentials, so the CLI's token refresh
- * and file-to-doc mapping writes never touch the user's real md2gd config.
- */
 function createIsolatedHome(secretJson: string, token: StoredToken): string {
   const home = mkdtempSync(join(tmpdir(), "md2gd-render-"));
   try {
@@ -197,9 +188,7 @@ function runCli(home: string, cliArgs: string[], log: string[]): string {
   return url;
 }
 
-/** Docs in the scratch folder made since `since`: what a run that failed before printing its URL left behind. */
 async function createdSince(token: string, folderId: string, since: Date): Promise<string[]> {
-  // A minute's margin covers clock drift between this machine and Drive.
   const after = new Date(since.getTime() - 60_000).toISOString();
   const q = `'${folderId}' in parents and createdTime > '${after}' and mimeType='${DOC_MIME}' and trashed=false`;
   const found = z
@@ -219,11 +208,6 @@ export interface Cleanup {
   warn: (message: string) => void;
 }
 
-/**
- * Undo a run, whatever state it stopped in. Each step runs on its own and only
- * warns when it fails, so one failure neither skips the rest nor replaces the
- * run's own error; the credentials copy goes first.
- */
 export async function cleanUp(run: Cleanup): Promise<void> {
   const step = async (what: string, action: () => unknown): Promise<void> => {
     try {
@@ -268,7 +252,6 @@ async function main(): Promise<void> {
   const log: string[] = [];
   let home: string | undefined;
   let documentId: string | undefined;
-  // Ctrl-C reaches the CLI too, which stops it; staying alive lets cleanup run.
   let interrupted = false;
   const onInterrupt = () => {
     interrupted = true;

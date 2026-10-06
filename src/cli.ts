@@ -40,8 +40,6 @@ function finish(url: string, open: boolean): void {
   if (open) openInBrowser(url);
 }
 
-// Summarise the link rewrite on stderr — never stdout, which carries only the
-// doc URL that scripts parse. Silent only when there was nothing to say.
 function reportLinks(stats: LinkStats): void {
   if (stats.rewritten === 0 && stats.unmatched === 0) return;
   const parts = [`${stats.rewritten} cross-link${stats.rewritten === 1 ? "" : "s"} linked`];
@@ -56,16 +54,12 @@ async function runConvert(command: Extract<Command, { kind: "convert" }>): Promi
   const client = new GoogleDocsClient({ getToken: () => getAccessToken(secret, Date.now()) });
 
   if (update) {
-    // Stable-URL mode: re-render in place, so the URL persists. A --folder here
-    // moves the doc into that folder (relocate) rather than creating a new one.
     const documentId = await resolveUpdateTarget(file, updateTarget);
     await updateFile(file, { title, folder, links, onLinks: reportLinks }, client, documentId);
     finish(documentUrl(documentId), open);
     return;
   }
 
-  // New doc. Note any prior doc from this file (so the destructive overwrite is
-  // never implicit — the user must opt in with --update), then record the new one.
   const previous = await lookupDoc(file);
   const documentId = await convertFile(file, { title, folder, links, onLinks: reportLinks }, client);
   await recordDoc(file, documentId);
@@ -97,7 +91,6 @@ async function main(): Promise<void> {
         return;
     }
   } catch (error) {
-    // Clear, non-crashing message; never dump a raw stack as primary output.
     fail(error instanceof Error ? error.message : `${NAME}: ${String(error)}`);
   }
 }
