@@ -155,6 +155,34 @@ describe("convertFile", () => {
     rmSync(mapPath);
   });
 
+  test("converts text whatever its file extension", async () => {
+    for (const name of ["notes.txt", "NOTES"]) {
+      const path = `${tmpdir()}/md2gd-ext-${Date.now()}-${name}`;
+      await Bun.write(path, "# Notes\n\nBody.\n");
+      expect(await convertFile(path, {}, new StubClient())).toBe("doc-x");
+    }
+  });
+
+  test("rejects a file holding a NUL byte as non-Markdown", async () => {
+    const path = `${tmpdir()}/md2gd-nul-${Date.now()}.md`;
+    await Bun.write(path, "# Title\0\n");
+    const client = new StubClient();
+    await expect(convertFile(path, {}, client)).rejects.toThrow(
+      new Error(`md2gd: not a Markdown file (binary content): ${path}`),
+    );
+    expect(client.createCalls).toBe(0);
+  });
+
+  test("rejects a file that is not valid UTF-8 as non-Markdown", async () => {
+    const path = `${tmpdir()}/md2gd-latin-${Date.now()}.md`;
+    await Bun.write(path, new Uint8Array([0x23, 0x20, 0xc3, 0x28]));
+    const client = new StubClient();
+    await expect(convertFile(path, {}, client)).rejects.toThrow(
+      new Error(`md2gd: not a Markdown file (binary content): ${path}`),
+    );
+    expect(client.createCalls).toBe(0);
+  });
+
   test("rejects a directory with a message naming it", async () => {
     const dir = `${tmpdir()}/md2gd-dir-${Date.now()}`;
     mkdirSync(dir);

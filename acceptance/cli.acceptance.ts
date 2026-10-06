@@ -122,7 +122,7 @@ describe("input files", () => {
     });
   });
 
-  test.failing("AC-14 a non-Markdown input file fails with an actionable message and creates no document", async () => {
+  test("AC-14 a non-Markdown input file fails with an actionable message and creates no document", async () => {
     await withWorld(async (world) => {
       await world.init();
       const input = join(world.work, "photo.png");

@@ -49,8 +49,18 @@ async function readInput(path: string, label: string): Promise<Uint8Array> {
   }
 }
 
+function decodeMarkdown(bytes: Uint8Array, filePath: string): string {
+  const binary = new Error(`md2gd: not a Markdown file (binary content): ${filePath}`);
+  if (bytes.includes(0)) throw binary;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    throw binary;
+  }
+}
+
 async function loadTree(filePath: string): Promise<Root> {
-  const source = new TextDecoder().decode(await readInput(filePath, "file"));
+  const source = decodeMarkdown(await readInput(filePath, "file"), filePath);
   if (source.trim().length === 0) throw new Error(`md2gd: file is empty: ${filePath}`);
 
   return parseMarkdown(source);
