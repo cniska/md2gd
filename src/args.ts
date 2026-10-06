@@ -20,7 +20,14 @@ function takeValue(args: string[], i: number, flag: string): string | { error: s
   return value;
 }
 
-export function parseArgs(argv: string[]): Command {
+function expandHome(path: string, home: string | undefined): string {
+  if (!home) return path;
+  if (path === "~") return home;
+  if (path.startsWith("~/")) return `${home}${path.slice(1)}`;
+  return path;
+}
+
+export function parseArgs(argv: string[], home: string | undefined): Command {
   const first = argv[0];
 
   if (argv.length === 0 || first === "help" || first === "--help" || first === "-h") return { kind: "help" };
@@ -64,7 +71,7 @@ export function parseArgs(argv: string[]): Command {
     } else if (arg === "--links") {
       const value = takeValue(argv, i, "--links");
       if (typeof value !== "string") return { kind: "error", message: value.error };
-      links = value;
+      links = expandHome(value, home);
       i++;
     } else if (arg === "--update") {
       update = true;
@@ -79,5 +86,5 @@ export function parseArgs(argv: string[]): Command {
   }
 
   if (first === undefined || first.startsWith("-")) return { kind: "error", message: "expected a markdown file path" };
-  return { kind: "convert", file: first, title, open, update, updateTarget, folder, links };
+  return { kind: "convert", file: expandHome(first, home), title, open, update, updateTarget, folder, links };
 }

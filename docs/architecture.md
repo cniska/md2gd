@@ -107,7 +107,7 @@ The scope is `drive` (which also authorises the Docs API's create/batchUpdate, s
 |--------|----------------|
 | `cli.ts` | Command dispatch, stdout/stderr, exit codes |
 | `open.ts`, `version.ts` | Browser launch for `--open`, name and version |
-| `args.ts` | Argument parsing into a pure `Command` (unit-tested without I/O) |
+| `args.ts` | Argument parsing into a pure `Command` (unit-tested without I/O); a leading `~` in the file and `--links` paths is expanded here against the home passed in |
 | `parse.ts` | Markdown to mdast, GFM + soft-break policy |
 | `plan.ts` | Tree to a tree of leaf runs, tables and quotes, at any nesting depth |
 | `convert.ts`, `inline.ts` | Leaves to styled Docs requests |

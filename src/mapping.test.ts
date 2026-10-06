@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
-import { canonicalPath, lookupDoc, recordDoc } from "./mapping";
+import { lookupDoc, recordDoc } from "./mapping";
 
 function tmpConfig(tag: string): string {
   return `${tmpdir()}/md2gd-map-${tag}-${Date.now()}-${Math.random().toString(36).slice(2)}.json`;
@@ -52,10 +52,5 @@ describe("mapping store", () => {
     const cfg = tmpConfig("corrupt");
     await Bun.write(cfg, "{ not valid json");
     expect(await lookupDoc(`${tmpdir()}/x.md`, cfg)).toBeUndefined();
-  });
-
-  test("canonicalPath expands a leading ~", async () => {
-    const home = process.env.HOME ?? "";
-    expect(await canonicalPath("~/some/nonexistent/file.md")).toBe(`${home}/some/nonexistent/file.md`);
   });
 });

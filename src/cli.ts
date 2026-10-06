@@ -70,7 +70,7 @@ async function runConvert(command: Extract<Command, { kind: "convert" }>): Promi
 }
 
 async function main(): Promise<void> {
-  const command = parseArgs(process.argv.slice(2));
+  const command = parseArgs(process.argv.slice(2), process.env.HOME);
 
   try {
     switch (command.kind) {

@@ -131,7 +131,7 @@ describe("input files", () => {
     });
   });
 
-  test.failing("AC-14 an input path given with ~ resolves against the home directory", async () => {
+  test("AC-14 an input path given with ~ resolves against the home directory", async () => {
     await withWorld(async (world) => {
       await world.init();
       writeFileSync(join(world.home, "home-notes.md"), "# From Home\n");

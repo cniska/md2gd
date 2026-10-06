@@ -10,12 +10,11 @@ export const ConfigSchema = z.looseObject({
 
 export type Config = z.infer<typeof ConfigSchema>;
 
-export async function canonicalPath(filePath: string): Promise<string> {
-  const expanded = filePath.startsWith("~/") ? `${process.env.HOME ?? ""}${filePath.slice(1)}` : filePath;
+async function canonicalPath(filePath: string): Promise<string> {
   try {
-    return await realpath(expanded);
+    return await realpath(filePath);
   } catch {
-    return resolve(expanded);
+    return resolve(filePath);
   }
 }
 
