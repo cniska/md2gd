@@ -29,7 +29,7 @@ These are the mechanisms that break naive converters. They are the reason the ex
 
 ### UTF-16 offsets
 
-The Docs API addresses content by **UTF-16 code unit**, not by character or byte. An emoji is 2 units; a ZWJ sequence is more. A single miscount corrupts every later offset in the document, and the reference documents are full of emoji and em-dashes. The executor never computes an offset by counting characters; it advances the cursor by the length of text it actually inserted and, for tables, reads real indices back from the document (next section).
+The Docs API addresses content by **UTF-16 code unit**, not by character or byte. An emoji is 2 units; a ZWJ sequence is more. A single miscount corrupts every later offset in the document. Counting bytes fails on the arrows, ×, §, ä and ✓/✗ that real documents carry, each one unit but several UTF-8 bytes; counting characters fails on any emoji. The executor never computes an offset by counting characters; it advances the cursor by the length of text it actually inserted and, for tables, reads real indices back from the document (next section).
 
 ### Two-phase table insertion
 
