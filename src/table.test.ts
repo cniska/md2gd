@@ -87,6 +87,51 @@ describe("buildTablePlan", () => {
     for (const w of widths) expect(Math.abs(w - (widths[0] ?? 0))).toBeLessThanOrEqual(1);
   });
 
+  test("a blank-body table shares the page equally even when one header is long", () => {
+    const md = [
+      "| Name | Signature of the approving engineering manager | Date |",
+      "|---|---|---|",
+      "| | | |",
+      "| | | |",
+      "",
+    ].join("\n");
+    const widths = firstTable(md, 451.28).columnWidths.map((d) => d.magnitude);
+    expect(widths).toEqual([150.43, 150.43, 150.42]);
+    expect(widths.reduce((s, w) => s + w, 0)).toBeCloseTo(451.28, 6);
+  });
+
+  test("an equal split never sums wider than an unrounded container", () => {
+    const md = ["| Name | Signature | Date |", "|---|---|---|", "| | | |", ""].join("\n");
+    const widths = firstTable(md, 451.2756).columnWidths.map((d) => d.magnitude);
+    expect(widths.reduce((s, w) => s + w, 0)).toBeLessThanOrEqual(451.2756);
+  });
+
+  test("a header-only table is sized by its headers, not shared equally", () => {
+    const md = ["| Name | Signature of the approving engineering manager | Date |", "|---|---|---|", ""].join("\n");
+    const [name, signature] = firstTable(md, 451.28).columnWidths;
+    if (!name || !signature) throw new Error("expected two widths");
+    expect(signature.magnitude).toBeGreaterThan(name.magnitude);
+  });
+
+  test("a table with one blank column still sizes its filled columns by content", () => {
+    const md = ["| A | B | C |", "|---|---|---|", `| x | ${"long content ".repeat(6)} | |`, ""].join("\n");
+    const [a, b] = firstTable(md, 451.28).columnWidths;
+    if (!a || !b) throw new Error("expected two widths");
+    expect(b.magnitude).toBeGreaterThan(a.magnitude);
+  });
+
+  test("a table too narrow for its columns' minimums shares the page equally and exactly", () => {
+    const md = [
+      "| A | B | C | D | E | F | G | H | I | J |",
+      `|${"---|".repeat(10)}`,
+      `|${" text |".repeat(10)}`,
+      "",
+    ].join("\n");
+    const widths = firstTable(md, 451.28).columnWidths.map((d) => d.magnitude);
+    expect(widths.reduce((s, w) => s + w, 0)).toBeCloseTo(451.28, 6);
+    expect(Math.max(...widths) - Math.min(...widths)).toBeLessThanOrEqual(0.0100001);
+  });
+
   test("a longer-content column gets a wider column", () => {
     const md = ["| K | Description |", "|---|---|", "| a | this cell has much longer content than the key |", ""].join(
       "\n",

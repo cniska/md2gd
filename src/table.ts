@@ -59,21 +59,21 @@ function naturalWidth(cells: CellPlan[][], col: number, contentWidth: number): n
   return Math.min(Math.max(MIN_COLUMN_WIDTH_PT, needed), contentWidth * NATURAL_FLOOR_CAP_SHARE);
 }
 
-function fillInAdjustedWeights(cells: CellPlan[][], columns: number): number[] {
-  const weights = Array.from({ length: columns }, (_, col) =>
-    Math.max(1, ...cells.map((row) => row[col]?.text.length ?? 0)),
-  );
-  const body = cells.slice(1);
-  if (body.length === 0) return weights;
-
+function filledColumns(body: CellPlan[][], columns: number): Set<number> {
   const filled = new Set<number>();
   for (const row of body) {
     for (let col = 0; col < columns; col++) {
       if ((row[col]?.text.trim().length ?? 0) > 0) filled.add(col);
     }
   }
-  if (filled.size === columns) return weights;
-  if (filled.size === 0) return weights.map(() => 1);
+  return filled;
+}
+
+function fillInAdjustedWeights(cells: CellPlan[][], columns: number, filled: Set<number>): number[] {
+  const weights = Array.from({ length: columns }, (_, col) =>
+    Math.max(1, ...cells.map((row) => row[col]?.text.length ?? 0)),
+  );
+  if (filled.size === 0 || filled.size === columns) return weights;
 
   const average = [...filled].reduce((sum, col) => sum + (weights[col] ?? 1), 0) / filled.size;
   return weights.map((w, col) => (filled.has(col) ? w : Math.max(w, average)));
@@ -83,13 +83,17 @@ export function columnWidths(plan: TablePlan, contentWidth: number): Dimension[]
   const { cells, columns } = plan;
   if (columns === 0) return [];
 
-  const weights = fillInAdjustedWeights(cells, columns);
+  const body = cells.slice(1);
+  const filled = filledColumns(body, columns);
+  if (body.length > 0 && filled.size === 0) return equalShares(contentWidth, columns);
+
+  const weights = fillInAdjustedWeights(cells, columns, filled);
   const floors = Array.from({ length: columns }, (_, col) => naturalWidth(cells, col, contentWidth));
 
   const floorSum = floors.reduce((sum, f) => sum + f, 0);
   if (floorSum >= contentWidth) {
     if (columns * MIN_COLUMN_WIDTH_PT >= contentWidth) {
-      return floors.map(() => pt(round(contentWidth / columns)));
+      return equalShares(contentWidth, columns);
     }
     const spare = contentWidth - columns * MIN_COLUMN_WIDTH_PT;
     const excessTotal = floors.reduce((sum, f) => sum + (f - MIN_COLUMN_WIDTH_PT), 0);
@@ -122,6 +126,13 @@ export function columnWidths(plan: TablePlan, contentWidth: number): Dimension[]
   }
 
   return widths.map((w) => pt(round(w)));
+}
+
+function equalShares(contentWidth: number, columns: number): Dimension[] {
+  const hundredths = Math.floor(contentWidth * 100 + 1e-6);
+  const base = Math.floor(hundredths / columns);
+  const extra = hundredths - base * columns;
+  return Array.from({ length: columns }, (_, col) => pt((base + (col < extra ? 1 : 0)) / 100));
 }
 
 function round(n: number): number {

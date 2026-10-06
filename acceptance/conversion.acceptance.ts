@@ -567,7 +567,7 @@ describe("tables", () => {
     });
   });
 
-  test.failing("AC-16 a table whose body is blank throughout shares the page equally even when one header is long", async () => {
+  test("AC-16 a table whose body is blank throughout shares the page equally even when one header is long", async () => {
     await withWorld(async (world) => {
       const view = await render(
         world,
