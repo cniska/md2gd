@@ -168,7 +168,7 @@ describe("convertFile", () => {
     await Bun.write(path, "# Title\0\n");
     const client = new StubClient();
     await expect(convertFile(path, {}, client)).rejects.toThrow(
-      new Error(`md2gd: not a Markdown file (binary content): ${path}`),
+      new Error(`md2gd: not a Markdown file (binary content or not UTF-8): ${path}; save it as UTF-8 text`),
     );
     expect(client.createCalls).toBe(0);
   });
@@ -178,7 +178,7 @@ describe("convertFile", () => {
     await Bun.write(path, new Uint8Array([0x23, 0x20, 0xc3, 0x28]));
     const client = new StubClient();
     await expect(convertFile(path, {}, client)).rejects.toThrow(
-      new Error(`md2gd: not a Markdown file (binary content): ${path}`),
+      new Error(`md2gd: not a Markdown file (binary content or not UTF-8): ${path}; save it as UTF-8 text`),
     );
     expect(client.createCalls).toBe(0);
   });

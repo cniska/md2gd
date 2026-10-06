@@ -50,7 +50,9 @@ async function readInput(path: string, label: string): Promise<Uint8Array> {
 }
 
 function decodeMarkdown(bytes: Uint8Array, filePath: string): string {
-  const binary = new Error(`md2gd: not a Markdown file (binary content): ${filePath}`);
+  const binary = new Error(
+    `md2gd: not a Markdown file (binary content or not UTF-8): ${filePath}; save it as UTF-8 text`,
+  );
   if (bytes.includes(0)) throw binary;
   try {
     return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
