@@ -120,4 +120,4 @@ The scope is `drive` (which also authorises the Docs API's create/batchUpdate, s
 | `http.ts` | Retry with backoff for every Google request |
 | `oauth.ts`, `tokens.ts`, `init.ts` | OAuth flow, token cache, one-time setup |
 | `config.ts`, `mapping.ts` | Config paths and the file→doc mapping |
-| `pipeline.ts` | Read file, derive title, resolve update target |
+| `pipeline.ts` | Read and validate the input file, derive title, resolve update target |

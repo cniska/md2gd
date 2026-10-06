@@ -37,11 +37,20 @@ export interface ConvertOptions {
   onLinks?: (stats: LinkStats) => void;
 }
 
-async function loadTree(filePath: string): Promise<Root> {
-  const file = Bun.file(filePath);
-  if (!(await file.exists())) throw new Error(`md2gd: file not found: ${filePath}`);
+async function readInput(path: string, label: string): Promise<Uint8Array> {
+  try {
+    return await Bun.file(path).bytes();
+  } catch (error) {
+    const code = error instanceof Error && "code" in error ? error.code : undefined;
+    if (code === "ENOENT") throw new Error(`md2gd: ${label} not found: ${path}`, { cause: error });
+    if (code === "EACCES") throw new Error(`md2gd: cannot read ${path}: permission denied`, { cause: error });
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new Error(`md2gd: cannot read ${path}: ${reason}`, { cause: error });
+  }
+}
 
-  const source = await file.text();
+async function loadTree(filePath: string): Promise<Root> {
+  const source = new TextDecoder().decode(await readInput(filePath, "file"));
   if (source.trim().length === 0) throw new Error(`md2gd: file is empty: ${filePath}`);
 
   return parseMarkdown(source);
@@ -54,11 +63,10 @@ async function applyLinkMap(tree: Root, filePath: string, options: ConvertOption
 }
 
 async function loadLinkMap(mapPath: string): Promise<Map<string, string>> {
-  const file = Bun.file(mapPath);
-  if (!(await file.exists())) throw new Error(`md2gd: link map not found: ${mapPath}`);
+  const source = new TextDecoder().decode(await readInput(mapPath, "link map"));
   let raw: unknown;
   try {
-    raw = JSON.parse(await file.text());
+    raw = JSON.parse(source);
   } catch {
     throw new Error(`md2gd: link map is not valid JSON: ${mapPath}`);
   }

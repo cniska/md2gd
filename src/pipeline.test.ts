@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { DocRequest, DocumentResource } from "./docs";
 import type { DocsClient } from "./executor";
@@ -126,6 +127,40 @@ describe("convertFile", () => {
     const path = `${tmpdir()}/md2gd-map-bad-src-${Date.now()}.md`;
     await Bun.write(path, "# H\n\nBody.\n");
     await expect(convertFile(path, { links: mapPath }, new StubClient())).rejects.toThrow(/path → url/);
+  });
+
+  test("rejects an unreadable file with a message naming it", async () => {
+    const path = `${tmpdir()}/md2gd-locked-${Date.now()}.md`;
+    await Bun.write(path, "# Locked\n");
+    chmodSync(path, 0o000);
+    const client = new StubClient();
+    await expect(convertFile(path, {}, client)).rejects.toThrow(
+      new Error(`md2gd: cannot read ${path}: permission denied`),
+    );
+    expect(client.createCalls).toBe(0);
+    rmSync(path);
+  });
+
+  test("rejects an unreadable link map with a message naming it", async () => {
+    const mapPath = `${tmpdir()}/md2gd-locked-map-${Date.now()}.json`;
+    await Bun.write(mapPath, "{}");
+    chmodSync(mapPath, 0o000);
+    const path = `${tmpdir()}/md2gd-locked-map-src-${Date.now()}.md`;
+    await Bun.write(path, "# H\n\nBody.\n");
+    const client = new StubClient();
+    await expect(convertFile(path, { links: mapPath }, client)).rejects.toThrow(
+      new Error(`md2gd: cannot read ${mapPath}: permission denied`),
+    );
+    expect(client.createCalls).toBe(0);
+    rmSync(mapPath);
+  });
+
+  test("rejects a directory with a message naming it", async () => {
+    const dir = `${tmpdir()}/md2gd-dir-${Date.now()}`;
+    mkdirSync(dir);
+    const client = new StubClient();
+    await expect(convertFile(dir, {}, client)).rejects.toThrow(/^md2gd: cannot read \S+md2gd-dir-\d+: \S/);
+    expect(client.createCalls).toBe(0);
   });
 });
 
