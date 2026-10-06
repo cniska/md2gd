@@ -106,6 +106,12 @@ describe("buildTablePlan", () => {
     expect(widths.reduce((s, w) => s + w, 0)).toBeLessThanOrEqual(451.2756);
   });
 
+  test("an equal split never sums a hundredth short of a container whose width carries float error", () => {
+    const md = ["| Name | Signature | Date |", "|---|---|---|", "| | | |", ""].join("\n");
+    const widths = firstTable(md, 256.03).columnWidths.map((d) => d.magnitude);
+    expect(widths.reduce((s, w) => s + w, 0)).toBeCloseTo(256.03, 6);
+  });
+
   test("a header-only table is sized by its headers, not shared equally", () => {
     const md = ["| Name | Signature of the approving engineering manager | Date |", "|---|---|---|", ""].join("\n");
     const [name, signature] = firstTable(md, 451.28).columnWidths;
