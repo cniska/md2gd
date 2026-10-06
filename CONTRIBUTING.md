@@ -17,6 +17,7 @@ Thanks for your interest in md2gd.
 
 - `bun test`. Unit tests are pure and offline — mock the Google API boundary, never hit the network.
 - The AST → `batchUpdate` mapping is tested by asserting the requests produced, not just that code runs.
+- `bun run test:acceptance` proves `SPEC.md`'s acceptance criteria by running the compiled binary against a scripted Google.
 
 ## Commits
 

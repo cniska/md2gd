@@ -11,10 +11,10 @@ Markdown ─▶ parse ─▶ plan ─▶ convert / table ─▶ executor ─▶ 
            mdast    segments   Docs requests    batchUpdate   Docs + Drive
 ```
 
-- **`parse.ts`** — Markdown to an mdast tree via `unified`: `remark-parse` + `remark-gfm` (tables, strikethrough, task lists, footnotes, autolinks) + `remark-breaks`. `remark-breaks` is the soft-break policy (SPEC FR-32): a single newline inside a paragraph becomes a hard line break, reproducing stacked-line intent instead of collapsing to a space.
+- **`parse.ts`** — Markdown to an mdast tree via `unified`: `remark-parse` + `remark-gfm` (tables, strikethrough, task lists, footnotes, autolinks) + `remark-breaks`. `remark-breaks` is the soft-break policy (SPEC FR-38): a single newline inside a paragraph becomes a hard line break, reproducing stacked-line intent instead of collapsing to a space.
 - **`plan.ts`** — walks the tree into an ordered tree of segments. A list item exists in Docs only as bullets and indents on its paragraphs, so each block becomes a leaf carrying its list placement (outermost list, nesting depth, preset, whether it starts the item). A run of leaves is one `linear` segment; each table, wherever it sits, is its own `table` segment; each blockquote is a `quote` segment holding its own segments. Tables and quotes are split out because their cell indices do not exist until they are inserted (see below), so they cannot be converted deterministically the way linear content can.
 - **`convert.ts` / `inline.ts`** — turn leaves into Docs requests at a known cursor, resolving inline formatting (bold, italic, code, links, strikethrough) into styled text runs. A leaf's paragraph style is its own spec from `style.ts`, chosen by what the block is; where it sits changes only its spacing (container edges, after a table, the end of a list, a tight list's text) and, for a bulleted item's later blocks, its indent.
-- **`table.ts`** — builds a `TablePlan` (rows, columns, each column's alignment, each cell's inline content) from a table node, and sizes its columns to the container width it lands in. A cell is a container holding one paragraph, filled through the same converter as every other block; its header row and column alignment give that paragraph its bold text and alignment (SPEC FR-14a, ST-4).
+- **`table.ts`** — builds a `TablePlan` (rows, columns, each column's alignment, each cell's inline content) from a table node, and sizes its columns to the container width it lands in. A cell is a container holding one paragraph, filled through the same converter as every other block; its header row and column alignment give that paragraph its bold text and alignment (SPEC FR-15, ST-4).
 - **`style.ts`** — the single source of truth for every typographic value: fonts, paragraph spacing, caption spacing, and every table style (cell padding, row style, header shading and text, column alignment), which the executor only places. Change the look here without touching conversion logic (SPEC ST-9).
 - **`executor.ts`** — drives the document: creates or clears it, then walks the segments emitting `batchUpdate` rounds.
 - **`google.ts`** — the live REST client for Docs and Drive. Implements the `DocsClient` interface the executor depends on, and validates every response against the shape md2gd reads (`docs.ts` schemas), so a malformed reply fails with a clear message instead of reaching the executor.
@@ -22,6 +22,8 @@ Markdown ─▶ parse ─▶ plan ─▶ convert / table ─▶ executor ─▶ 
 ## The testing seam
 
 `executor.ts` depends on a `DocsClient` interface (`createDocument`, `batchUpdate`, `getDocument`, `renameDocument`, `moveDocument`), not on `google.ts` directly. Unit tests inject a mock and assert the exact `batchUpdate` requests produced, with no network or auth. This is the boundary "mock at boundaries" refers to: everything above `DocsClient` is tested offline; only `google.ts` talks to Google. Seeing what Google actually renders is the separate, opt-in `bun run render` (`scripts/render-doc.ts`), which drives the real CLI into a scratch Drive folder and saves the document, an outline, and page images.
+
+The acceptance suite (`acceptance/`) tests above that seam: it runs the compiled binary with `MD2GD_GOOGLE_ORIGIN` pointing at a scripted Google (`acceptance/support/google-fake.ts`). The fake models a Docs document the way Google indexes it — a table takes one index for its start, one per row and one per cell, and ends one past its last row; an empty paragraph precedes it — so the executor's read-back of real cell indices runs as it does live. `acceptance/fidelity.acceptance.ts` holds that model to a document Google produced (`acceptance/fixtures/probe.google.json`). A TCP front (`drop-proxy.ts`) drops chosen connections to exercise retries.
 
 ## Hazards
 
@@ -54,7 +56,7 @@ Docs has no quote style, and a paragraph border joins the next paragraph's only 
 
 ### Pre-table spacer
 
-The API injects an empty paragraph immediately before every inserted table. Left alone it renders inconsistently and breaks caption grouping. The executor pins that paragraph to a thin ~6pt spacer, styled only on its single newline index so no real caption or heading text is shrunk. This keeps create and update rendering identical and lets a bold caption sit close to the table it introduces (SPEC FR-34, FR-35).
+The API injects an empty paragraph immediately before every inserted table. Left alone it renders inconsistently and breaks caption grouping. The executor pins that paragraph to a thin ~6pt spacer, styled only on its single newline index so no real caption or heading text is shrunk. This keeps create and update rendering identical and lets a bold caption sit close to the table it introduces (SPEC FR-40, FR-41).
 
 **Why not just delete it?** Removing the paragraph seems cleaner, but the Docs API rejects it: `deleteContentRange` over the newline immediately before a table returns `400 Invalid deletion range. Cannot delete the requested range.` (The Docs editor lets you backspace it; the API does not.) The spacer is a required workaround, not a stylistic choice — do not reintroduce a delete here; tuning its size is the only safe lever.
 
@@ -70,30 +72,30 @@ A table cannot be indented, so a table or quote inside a list item sits at its c
 
 `--update` re-renders into an existing document so its URL and Drive location persist (SPEC §2.6). The executor:
 
-1. **Reads before it destroys.** It GETs the target first. A 403/404 means the id is wrong, the doc was trashed, or the user lacks access; that is translated into an actionable message rather than a raw API error (SPEC FR-39, FR-43). Only the read is guarded, so an auth or permission failure leaves the target untouched.
-2. **Relocates, if asked.** With `--folder`, it moves the Drive file into that folder before clearing, so a bad folder fails while the body is still intact (SPEC FR-27b).
-3. **Clears the body** down to the single undeletable trailing newline, then resets the surviving paragraph to normal style with list markers removed, so the previous render's trailing heading or list style cannot bleed into the new content (SPEC FR-40). An already-empty body skips the delete.
+1. **Reads before it destroys.** It GETs the target first. A 403/404 means the id is wrong, the doc was trashed, or the user lacks access; that is translated into an actionable message rather than a raw API error (SPEC FR-47, FR-51). Only the read is guarded, so an auth or permission failure leaves the target untouched.
+2. **Relocates, if asked.** With `--folder`, it moves the Drive file into that folder before clearing, so a bad folder fails while the body is still intact (SPEC FR-31).
+3. **Clears the body** down to the single undeletable trailing newline, then resets the surviving paragraph to normal style with list markers removed, so the previous render's trailing heading or list style cannot bleed into the new content (SPEC FR-48). An already-empty body skips the delete.
 4. **Refills** using the same segment pipeline as create.
-5. **Renames** the Drive file if the derived title changed (SPEC FR-41).
+5. **Renames** the Drive file if the derived title changed (SPEC FR-49).
 
 The update is not atomic and comments anchored to cleared ranges orphan. Both are accepted limitations for the single-user regenerate loop, documented in the README rather than engineered around (SPEC D-2).
 
 ## Retries
 
-Every Google request, the OAuth token calls included, goes through `fetchWithRetry` (`http.ts`). Rate limiting is always retried, both a 429 and the 403 Drive sends instead (told apart from a permission 403 by its `rateLimitExceeded` or `userRateLimitExceeded` reason), since Google rejects a rate-limited request before it applies. Server errors (500, 502, 503, 504) and dropped connections are retried only for reads and other idempotent calls: a POST — a Docs `batchUpdate`, a Drive create — may already have applied when the error arrives, and resending it would duplicate content, so it fails at once instead. Retries run up to four attempts with exponential backoff from one second, honouring a `Retry-After` header, in seconds or as a date, up to 30 seconds (SPEC NF-5, NF-17). Once retries run out, lasting rate limiting becomes a "rate limit reached" message and a lasting connection failure a "cannot reach Google" one, never a raw error (SPEC NF-3).
+Every Google request, the OAuth token calls included, goes through `fetchWithRetry` (`http.ts`). Rate limiting is always retried, both a 429 and the 403 Drive sends instead (told apart from a permission 403 by its `rateLimitExceeded` or `userRateLimitExceeded` reason), since Google rejects a rate-limited request before it applies. Server errors (500, 502, 503, 504) and dropped connections are retried only for reads and other idempotent calls: a POST — a Docs `batchUpdate`, a Drive create — may already have applied when the error arrives, and resending it would duplicate content, so it fails at once instead. Retries run up to four attempts with exponential backoff from one second, honouring a `Retry-After` header, in seconds or as a date, up to 30 seconds (SPEC NF-5, NF-6). Once retries run out, lasting rate limiting becomes a "rate limit reached" message and a lasting connection failure a "cannot reach Google" one, never a raw error (SPEC NF-3).
 
 ## Drive and Docs identity
 
-A document is created directly inside its parent folder via Drive, not via the Docs API's create-then-move. A Drive file's id *is* the Docs document id, so creating the file with the folder as parent avoids the add-parent-to-a-rooted-file move, which fails under Drive's single-parent model. The parent is `--folder` if given, else md2gd's own default folder (SPEC FR-25, FR-27b). The same identity lets the title be renamed with a Drive `PATCH`.
+A document is created directly inside its parent folder via Drive, not via the Docs API's create-then-move. A Drive file's id *is* the Docs document id, so creating the file with the folder as parent avoids the add-parent-to-a-rooted-file move, which fails under Drive's single-parent model. The parent is `--folder` if given, else md2gd's own default folder (SPEC FR-27, FR-31). The same identity lets the title be renamed with a Drive `PATCH`.
 
-Every Drive call acting on a caller-supplied id goes through `driveUrl`, which carries `supportsAllDrives=true`. Drive treats a client that omits it as My Drive-only and reports a shared-drive folder or document as a missing file, so the flag lives in the URL builder rather than at each call site (SPEC FR-27b). The default-folder lookup deliberately stays outside it: that folder is always in md2gd's own Drive, and widening the search to all drives would let it latch onto a same-named folder in a shared drive.
+Every Drive call acting on a caller-supplied id goes through `driveUrl`, which carries `supportsAllDrives=true`. Drive treats a client that omits it as My Drive-only and reports a shared-drive folder or document as a missing file, so the flag lives in the URL builder rather than at each call site (SPEC FR-31). The default-folder lookup deliberately stays outside it: that folder is always in md2gd's own Drive, and widening the search to all drives would let it latch onto a same-named folder in a shared drive.
 
 ## Auth
 
 `md2gd init` runs the OAuth installed-application flow once (`oauth.ts`, `init.ts`, `tokens.ts`):
 
 - A loopback server binds `127.0.0.1` on an ephemeral port and becomes the redirect target.
-- The consent URL carries a random `state` and a PKCE S256 challenge; the callback verifies `state` before accepting the code (SPEC AU-8).
+- The consent URL carries a random `state` and a PKCE S256 challenge; the callback verifies `state` before accepting the code (SPEC AU-7).
 - Denied consent and a 5-minute timeout both settle the flow cleanly instead of hanging.
 - The resulting token (including its refresh token) is cached in the config directory (`~/.md2gd/` on macOS, `$XDG_CONFIG_HOME/md2gd` or `~/.config/md2gd` on Linux; `config.ts`) with owner-only permissions and refreshed automatically on expiry (SPEC AU-2, AU-4).
 

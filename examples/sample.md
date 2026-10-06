@@ -10,7 +10,7 @@ This sample exercises every construct md2gd supports. Running it end to end is t
 
 The service is **broadly ready** for launch, with two *blocking* issues and several ***minor*** follow-ups. Configuration is read from `config.json` at boot; secrets such as `sk_test_` keys must never appear in logs. The staging host is `staging-api.internal.example.com` and responds within budget.
 
-Note the typography that must survive intact: em-dashes (—), en-dashes (2020–2026), arrows (request → response), and curly quotes ("ready", 'draft').
+Note the typography that must survive intact: em-dashes (—), en-dashes (2020–2026), arrows (request → response), and curly quotes (“ready”, ‘draft’).
 
 ## Findings
 

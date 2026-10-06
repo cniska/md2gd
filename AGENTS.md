@@ -10,13 +10,14 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 2. Every config value and external input is validated through Zod before entering the type system.
 3. OAuth requests only the `drive` scope — the workflow places docs in and updates docs the user did not create, which `drive.file` cannot reach, and `drive` also covers the Docs edits — never a broader or extra scope (AU-3). Tokens and secrets are never committed.
 4. Google Docs offsets are UTF-16 code units (emoji are 2 units); all index arithmetic must account for this (`docs/architecture.md`).
-5. Every SPEC §2.5 edge case and §3.1 styling pain point has an automated test. `bun run verify` must be green before every commit.
+5. Every SPEC §2.5 edge case and §3.1 styling pain point has a unit test, and every §7 criterion has an acceptance test or a todo; the citation check in `bun test` ties the criteria to the requirements and the tests. `bun run verify` must be green before every commit.
 
 ## Workflow
 
 - Run locally: `bun run start -- <file.md>`.
 - Compile a standalone binary: `bun build --compile src/cli.ts --outfile md2gd`.
 - Verify (lint → typecheck → test → audit): `bun run verify`.
+- Prove the spec's criteria against a scripted Google: `bun run test:acceptance` (compiles the binary first).
 - See a change in a real Google Doc: `bun run render -- <file.md>`; the recipe (credentials, evidence, cleanup) is `.claude/skills/md2gd-verify-doc/SKILL.md`. Run it after conversion, styling, or executor changes.
 - Cut a release: bump `version` in `package.json`, commit `chore: release vX.Y.Z`, and push a matching `vX.Y.Z` tag — `.github/workflows/release.yml` builds the binaries, writes their checksums, and publishes the GitHub release. There is no local release script.
 
@@ -40,6 +41,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 
 - `bun test`. Unit tests are pure and offline: mock boundary effects (filesystem, network, Google APIs), never exercise them. The live Google check (`bun run render`) stays out of `verify`.
 - The AST → `batchUpdate` mapping is tested by asserting the requests produced, not just that code runs.
+- Acceptance tests (`acceptance/*.acceptance.ts`) run the compiled binary against the scripted Google in `acceptance/support/`, each in its own temporary home. A test's name starts with the criteria it proves; a case exposing a known bug is `test.failing`, one the suite cannot reach is `test.todo`.
 - Drive conversion changes test-first (red-green-refactor).
 
 ## Commits

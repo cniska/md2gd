@@ -32,6 +32,7 @@
     "lint:spec-ids": "bun scripts/check-spec-ids.ts",
     "typecheck": "bunx tsc --noEmit",
     "test": "bun test",
+    "test:acceptance": "bun build --compile src/cli.ts --outfile .acceptance/md2gd && bun test --concurrent --max-concurrency=4 ./acceptance/*.acceptance.ts",
     "audit": "bun audit",
     "verify": "bun run lint && bun run typecheck && bun test && bun run audit"
   },

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DEFAULT_FOLDER_NAME } from "./config";
 import { type DocRequest, type DocumentResource, DocumentResourceSchema } from "./docs";
 import type { DocsClient } from "./executor";
+import { googleEndpoint } from "./google-origin";
 import { type FetchFn, fetchWithRetry, isRateLimited, type Sleep } from "./http";
 
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
@@ -31,7 +32,7 @@ export function documentUrl(documentId: string): string {
  * and answers 404 for anything living in a shared drive.
  */
 function driveUrl(path = "", params: Record<string, string> = {}): string {
-  const url = new URL(`${DRIVE_API}${path}`);
+  const url = new URL(googleEndpoint(`${DRIVE_API}${path}`));
   url.search = new URLSearchParams({ ...params, supportsAllDrives: "true" }).toString();
   return url.toString();
 }
@@ -85,11 +86,11 @@ export class GoogleDocsClient implements DocsClient {
   }
 
   async batchUpdate(documentId: string, requests: DocRequest[]): Promise<void> {
-    await this.json(z.unknown(), "POST", `${DOCS_API}/${documentId}:batchUpdate`, { requests });
+    await this.json(z.unknown(), "POST", googleEndpoint(`${DOCS_API}/${documentId}:batchUpdate`), { requests });
   }
 
   async getDocument(documentId: string): Promise<DocumentResource> {
-    return this.json(DocumentResourceSchema, "GET", `${DOCS_API}/${documentId}`);
+    return this.json(DocumentResourceSchema, "GET", googleEndpoint(`${DOCS_API}/${documentId}`));
   }
 
   async renameDocument(documentId: string, name: string): Promise<void> {
@@ -121,12 +122,12 @@ export class GoogleDocsClient implements DocsClient {
     const found = await this.json(
       DriveFileListSchema,
       "GET",
-      `${DRIVE_API}?q=${encodeURIComponent(q)}&fields=files(id)`,
+      googleEndpoint(`${DRIVE_API}?q=${encodeURIComponent(q)}&fields=files(id)`),
     );
     const existing = found.files[0]?.id;
     if (existing) return existing;
 
-    const created = await this.json(DriveFileSchema, "POST", DRIVE_API, {
+    const created = await this.json(DriveFileSchema, "POST", googleEndpoint(DRIVE_API), {
       name: this.folderName,
       mimeType: FOLDER_MIME,
     });

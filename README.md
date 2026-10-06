@@ -164,6 +164,8 @@ md2gd stores everything in a user-scoped directory with owner-only permissions �
 
 Nothing here is ever transmitted anywhere except Google's own APIs.
 
+Setting `MD2GD_GOOGLE_ORIGIN` (e.g. `http://127.0.0.1:8080`) sends every Google API request — OAuth, Docs and Drive — to that origin instead, for testing against a stand-in. The printed document URL is unchanged.
+
 ## Reset
 
 To sign out, delete the cached token and re-run `init`; delete the whole directory for a full reset including the stored client secret:

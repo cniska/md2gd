@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { SCOPES } from "./config";
+import { googleEndpoint } from "./google-origin";
 import { type FetchFn, fetchWithRetry } from "./http";
 import { isExpired, loadToken, type StoredToken, saveToken } from "./tokens";
 
@@ -51,7 +52,7 @@ export function buildAuthUrl(clientId: string, redirectUri: string, params: Auth
     code_challenge: params.codeChallenge,
     code_challenge_method: "S256",
   });
-  return `${AUTH_ENDPOINT}?${query.toString()}`;
+  return `${googleEndpoint(AUTH_ENDPOINT)}?${query.toString()}`;
 }
 
 /** A URL-safe random token (base64url), used for `state` and PKCE verifiers. */
@@ -69,7 +70,7 @@ export async function createPkce(): Promise<{ verifier: string; challenge: strin
 }
 
 async function postToken(fetchFn: FetchFn, body: URLSearchParams): Promise<z.infer<typeof TokenResponseSchema>> {
-  const res = await fetchWithRetry(fetchFn, TOKEN_ENDPOINT, {
+  const res = await fetchWithRetry(fetchFn, googleEndpoint(TOKEN_ENDPOINT), {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: body.toString(),
