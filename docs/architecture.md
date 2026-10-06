@@ -51,7 +51,7 @@ Docs has no quote style, and a paragraph border joins the next paragraph's only 
 
 - **Placement.** Content is only ever appended at the end of the innermost open container, so nothing before the cursor moves except the nesting tabs bulleting strips, which `convertLeaves` subtracts from the index it returns. A newly inserted table is the first table at any depth starting at or after the cursor; after its fill, the cursor continues from that table's own end index.
 - **Geometry.** Docs draws a cell border centered on the cell's edge without taking width, so a quote's column is its container's full width and its contents sit in by the cell's left padding alone. Every block's right edge therefore meets the page's content edge, inside a quote or not.
-- **The cell's own paragraph.** A cell always keeps one paragraph, so the quote's last block is written into it rather than adding a line. When the last block is a table or another quote, the paragraph after it cannot go, and is pinned to the same thin spacer style as the paragraph before a table (SPEC FR-45).
+- **The cell's own paragraph.** A cell always keeps one paragraph, so the quote's last block is written into it rather than adding a line. When the last block is a table or another quote, the paragraph after it cannot go, and is pinned to the same thin spacer size as the paragraph before a table, but without its `keepWithNext` (see § Pre-table spacer), so the quote is not bound to what follows it (SPEC FR-45).
 - **Cost.** Every table and quote costs two reads, one to locate it and one for its end, however deeply it is nested.
 
 ### Pre-table spacer
