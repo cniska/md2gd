@@ -340,7 +340,7 @@ describe("spacing pain points", () => {
     });
   });
 
-  test.failing("AC-19 a caption is kept on the same page as the table it introduces", async () => {
+  test("AC-19 a caption is kept on the same page as the table it introduces", async () => {
     await withWorld(async (world) => {
       const view = await render(world, "Intro.\n\n**Customer journey**\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n");
       const at = view.blocks.findIndex((b) => b.kind === "paragraph" && b.text === "Customer journey");

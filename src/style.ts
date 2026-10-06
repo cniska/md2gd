@@ -107,6 +107,11 @@ export const preTableParagraphStyle: ParagraphStyleSpec = spec({
   lineSpacing: 100,
 });
 
+export const preTableKeptParagraphStyle: ParagraphStyleSpec = spec({
+  ...preTableParagraphStyle.paragraphStyle,
+  keepWithNext: true,
+});
+
 export const preTableTextStyle: TextStyle = { fontSize: pt(6) };
 
 export const AFTER_TABLE_SPACE: Dimension = pt(10);

@@ -11,6 +11,8 @@ import type { Leaf, QuoteSegment, Segment } from "./plan";
 import {
   headerCellStyle,
   normalParagraphStyle,
+  type ParagraphStyleSpec,
+  preTableKeptParagraphStyle,
   preTableParagraphStyle,
   preTableTextStyle,
   QUOTE_INSET_PT,
@@ -186,7 +188,8 @@ async function insertQuoteSegment(
     isCell: true,
   });
   const last = quote.segments.at(-1);
-  if (last !== undefined && last.kind !== "linear") await client.batchUpdate(documentId, spacerRequests(end));
+  if (last !== undefined && last.kind !== "linear")
+    await client.batchUpdate(documentId, spacerRequests(end, preTableParagraphStyle));
 
   return tableEndIndex(await client.getDocument(documentId), located.startIndex);
 }
@@ -243,16 +246,16 @@ function locateTable(doc: DocumentResource, atIndex: number): LocatedTable | und
 function preTableSpacerRequests(tableStart: number): DocRequest[] {
   const paragraphStart = tableStart - 1;
   if (paragraphStart < BODY_START_INDEX) return [];
-  return spacerRequests(paragraphStart);
+  return spacerRequests(paragraphStart, preTableKeptParagraphStyle);
 }
 
-function spacerRequests(paragraphStart: number): DocRequest[] {
+function spacerRequests(paragraphStart: number, style: ParagraphStyleSpec): DocRequest[] {
   const range = { startIndex: paragraphStart, endIndex: paragraphStart + 1 };
   return [
     {
       updateParagraphStyle: {
-        paragraphStyle: preTableParagraphStyle.paragraphStyle,
-        fields: preTableParagraphStyle.fields,
+        paragraphStyle: style.paragraphStyle,
+        fields: style.fields,
         range,
       },
     },

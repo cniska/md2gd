@@ -111,7 +111,7 @@ describe("executeDocument", () => {
     expect(Math.abs(widths.reduce((sum, w) => sum + w, 0) - 451.28)).toBeLessThanOrEqual(0.05);
   });
 
-  test("the injected paragraph before a table is pinned to a thin spacer", async () => {
+  test("the injected paragraph before a table is pinned to a thin spacer kept with the table", async () => {
     const tableGet: DocumentResource = {
       documentStyle: A4,
       body: {
@@ -138,8 +138,17 @@ describe("executeDocument", () => {
       (r) => "updateTextStyle" in r && r.updateTextStyle.range.startIndex === 4 && r.updateTextStyle.textStyle.fontSize,
     );
     expect(spacerFont).toBeDefined();
+    expect(keptWithNextAt(styleFill)).toEqual([4]);
   });
 });
+
+function keptWithNextAt(requests: DocRequest[]): number[] {
+  return requests.flatMap((r) =>
+    "updateParagraphStyle" in r && r.updateParagraphStyle.paragraphStyle.keepWithNext === true
+      ? [r.updateParagraphStyle.range.startIndex]
+      : [],
+  );
+}
 
 class OneCellClient extends MockClient {
   override getDocument(_id: string): Promise<DocumentResource> {
@@ -269,6 +278,7 @@ describe("executeDocument quotes", () => {
       startIndex: 20,
       endIndex: 21,
     });
+    expect(keptWithNextAt(requests)).toEqual([1, 10]);
   });
 
   test("a quote after a quote is inserted where the first one ends", async () => {

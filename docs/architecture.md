@@ -56,7 +56,7 @@ Docs has no quote style, and a paragraph border joins the next paragraph's only 
 
 ### Pre-table spacer
 
-The API injects an empty paragraph immediately before every inserted table. Left alone it renders inconsistently and breaks caption grouping. The executor pins that paragraph to a thin ~6pt spacer, styled only on its single newline index so no real caption or heading text is shrunk. This keeps create and update rendering identical and lets a bold caption sit close to the table it introduces (SPEC FR-40, FR-41).
+The API injects an empty paragraph immediately before every inserted table. Left alone it renders inconsistently and breaks caption grouping. The executor pins that paragraph to a thin ~6pt spacer, styled only on its single newline index so no real caption or heading text is shrunk. This keeps create and update rendering identical and lets a bold caption sit close to the table it introduces. The spacer before a table or quote also carries `keepWithNext`: the caption is kept with the spacer, so without it a page break could fall between the spacer and the table. The trailing spacer at the bottom of a quote does not, so a quote is never bound to what follows it (SPEC FR-40, FR-41, ST-17).
 
 **Why not just delete it?** Removing the paragraph seems cleaner, but the Docs API rejects it: `deleteContentRange` over the newline immediately before a table returns `400 Invalid deletion range. Cannot delete the requested range.` (The Docs editor lets you backspace it; the API does not.) The spacer is a required workaround, not a stylistic choice — do not reintroduce a delete here; tuning its size is the only safe lever.
 
