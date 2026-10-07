@@ -1,10 +1,11 @@
 #!/usr/bin/env bun
 import type { Command } from "./args";
 import { parseArgs } from "./args";
+import { createRefuser, hasCode, reportOf } from "./coded-error";
 import { documentUrl, GoogleDocsClient } from "./google";
 import { loadStoredClientSecret, runInit } from "./init";
 import type { LinkStats } from "./links";
-import { lookupDoc, recordDoc } from "./mapping";
+import { loadConfig, lookupDoc, recordDoc } from "./mapping";
 import { getAccessToken } from "./oauth";
 import { openInBrowser } from "./open";
 import { convertFile, resolveUpdateTarget, updateFile } from "./pipeline";
@@ -30,14 +31,13 @@ Options:
   -V, --version        Show version
 `;
 
-function fail(message: string): void {
-  process.stderr.write(`${message}\n`);
-  process.exitCode = 1;
-}
+const refuse = createRefuser<{ usage: { problem: string } }>({
+  usage: { message: ({ problem }) => problem, resolve: () => `${NAME} --help` },
+});
 
-function finish(url: string, open: boolean): void {
-  process.stdout.write(`${url}\n`);
-  if (open) openInBrowser(url);
+function fail(error: unknown): void {
+  process.stderr.write(reportOf(error));
+  process.exitCode = hasCode(error, "usage") ? 2 : 1;
 }
 
 function reportLinks(stats: LinkStats): void {
@@ -52,21 +52,34 @@ async function runConvert(command: Extract<Command, { kind: "convert" }>): Promi
   const { file, title, open, update, updateTarget, folder, links } = command;
   const secret = await loadStoredClientSecret();
   const client = new GoogleDocsClient({ getToken: () => getAccessToken(secret, Date.now()) });
+  const config = await loadConfig();
+  const options = { title, folder, links, onLinks: reportLinks };
 
+  let documentId: string;
   if (update) {
-    const documentId = await resolveUpdateTarget(file, updateTarget);
-    await updateFile(file, { title, folder, links, onLinks: reportLinks }, client, documentId);
-    finish(documentUrl(documentId), open);
-    return;
+    documentId = await resolveUpdateTarget(file, updateTarget, config);
+    await updateFile(file, options, client, documentId);
+  } else {
+    documentId = await convertFile(file, options, client);
   }
-
-  const previous = await lookupDoc(file);
-  const documentId = await convertFile(file, { title, folder, links, onLinks: reportLinks }, client);
-  await recordDoc(file, documentId);
-  if (previous) {
+  const url = documentUrl(documentId);
+  process.stdout.write(`${url}\n`);
+  const previous = update ? null : await lookupDoc(config, file);
+  if (previous !== null) {
     process.stderr.write(`${NAME}: previously created ${documentUrl(previous)} — pass --update to overwrite it\n`);
   }
-  finish(documentUrl(documentId), open);
+  const unopened = open ? openFailure(url) : null;
+  await recordDoc(file, documentId);
+  if (unopened !== null) throw unopened;
+}
+
+function openFailure(url: string): unknown {
+  try {
+    openInBrowser(url);
+    return null;
+  } catch (error) {
+    return error;
+  }
 }
 
 async function main(): Promise<void> {
@@ -81,7 +94,7 @@ async function main(): Promise<void> {
         process.stdout.write(`${NAME} v${VERSION}\n`);
         return;
       case "error":
-        fail(`${NAME}: ${command.message}\n\n${HELP}`);
+        fail(refuse("usage", { problem: command.message }));
         return;
       case "init":
         await runInit(command.clientPath, (message) => process.stdout.write(`${message}\n`));
@@ -91,7 +104,7 @@ async function main(): Promise<void> {
         return;
     }
   } catch (error) {
-    fail(error instanceof Error ? error.message : `${NAME}: ${String(error)}`);
+    fail(error);
   }
 }
 

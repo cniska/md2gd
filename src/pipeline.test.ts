@@ -3,7 +3,8 @@ import { chmodSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import type { DocRequest, DocumentResource } from "./docs";
 import type { DocsClient } from "./executor";
-import { recordDoc } from "./mapping";
+import { GoogleDocsClient } from "./google";
+import { loadConfig, recordDoc } from "./mapping";
 import { parseMarkdown } from "./parse";
 import { convertFile, deriveTitle, parseDocId, parseFolderId, resolveUpdateTarget, updateFile } from "./pipeline";
 
@@ -57,13 +58,18 @@ describe("convertFile", () => {
   });
 
   test("rejects a missing file", async () => {
-    await expect(convertFile(`${tmpdir()}/nope-${Date.now()}.md`, {}, new StubClient())).rejects.toThrow(/not found/);
+    const path = `${tmpdir()}/nope-${Date.now()}.md`;
+    await expect(convertFile(path, {}, new StubClient())).rejects.toThrow(
+      expect.objectContaining({ code: "file_not_found", kind: "refusal", meta: { path } }),
+    );
   });
 
   test("rejects an empty file", async () => {
     const path = `${tmpdir()}/md2gd-empty-${Date.now()}.md`;
     await Bun.write(path, "   \n");
-    await expect(convertFile(path, {}, new StubClient())).rejects.toThrow(/empty/);
+    await expect(convertFile(path, {}, new StubClient())).rejects.toThrow(
+      expect.objectContaining({ code: "file_empty", meta: { path } }),
+    );
   });
 
   test("passes the parsed --folder id to createDocument", async () => {
@@ -115,8 +121,9 @@ describe("convertFile", () => {
     const path = `${tmpdir()}/md2gd-badmap-${Date.now()}.md`;
     await Bun.write(path, "# H\n\nBody.\n");
     const client = new StubClient();
-    await expect(convertFile(path, { links: `${tmpdir()}/no-such-map-${Date.now()}.json` }, client)).rejects.toThrow(
-      /link map not found/,
+    const links = `${tmpdir()}/no-such-map-${Date.now()}.json`;
+    await expect(convertFile(path, { links }, client)).rejects.toThrow(
+      expect.objectContaining({ code: "link_map_not_found", meta: { path: links } }),
     );
     expect(client.createCalls).toBe(0);
   });
@@ -126,7 +133,22 @@ describe("convertFile", () => {
     await Bun.write(mapPath, JSON.stringify({ "a.md": 5 }));
     const path = `${tmpdir()}/md2gd-map-bad-src-${Date.now()}.md`;
     await Bun.write(path, "# H\n\nBody.\n");
-    await expect(convertFile(path, { links: mapPath }, new StubClient())).rejects.toThrow(/path → url/);
+    await expect(convertFile(path, { links: mapPath }, new StubClient())).rejects.toThrow(
+      expect.objectContaining({
+        code: "link_map_invalid",
+        meta: { path: mapPath, problem: "a.md: Invalid input: expected string, received number" },
+      }),
+    );
+  });
+
+  test("a link map that is not JSON fails as unparsed", async () => {
+    const mapPath = `${tmpdir()}/md2gd-map-nojson-${Date.now()}.json`;
+    await Bun.write(mapPath, "{ nope");
+    const path = `${tmpdir()}/md2gd-map-nojson-src-${Date.now()}.md`;
+    await Bun.write(path, "# H\n\nBody.\n");
+    await expect(convertFile(path, { links: mapPath }, new StubClient())).rejects.toThrow(
+      expect.objectContaining({ code: "link_map_unparsed", meta: { path: mapPath } }),
+    );
   });
 
   test("rejects an unreadable file with a message naming it", async () => {
@@ -135,7 +157,11 @@ describe("convertFile", () => {
     chmodSync(path, 0o000);
     const client = new StubClient();
     await expect(convertFile(path, {}, client)).rejects.toThrow(
-      new Error(`md2gd: cannot read ${path}: permission denied`),
+      expect.objectContaining({
+        code: "file_unreadable",
+        meta: { path, reason: "permission denied" },
+        cause: expect.objectContaining({ code: "EACCES" }),
+      }),
     );
     expect(client.createCalls).toBe(0);
     rmSync(path);
@@ -149,7 +175,7 @@ describe("convertFile", () => {
     await Bun.write(path, "# H\n\nBody.\n");
     const client = new StubClient();
     await expect(convertFile(path, { links: mapPath }, client)).rejects.toThrow(
-      new Error(`md2gd: cannot read ${mapPath}: permission denied`),
+      expect.objectContaining({ code: "link_map_unreadable", meta: { path: mapPath, reason: "permission denied" } }),
     );
     expect(client.createCalls).toBe(0);
     rmSync(mapPath);
@@ -168,7 +194,7 @@ describe("convertFile", () => {
     await Bun.write(path, "# Title\0\n");
     const client = new StubClient();
     await expect(convertFile(path, {}, client)).rejects.toThrow(
-      new Error(`md2gd: not a Markdown file (binary content or not UTF-8): ${path}; save it as UTF-8 text`),
+      expect.objectContaining({ code: "file_not_markdown", meta: { path } }),
     );
     expect(client.createCalls).toBe(0);
   });
@@ -178,7 +204,7 @@ describe("convertFile", () => {
     await Bun.write(path, new Uint8Array([0x23, 0x20, 0xc3, 0x28]));
     const client = new StubClient();
     await expect(convertFile(path, {}, client)).rejects.toThrow(
-      new Error(`md2gd: not a Markdown file (binary content or not UTF-8): ${path}; save it as UTF-8 text`),
+      expect.objectContaining({ code: "file_not_markdown", meta: { path } }),
     );
     expect(client.createCalls).toBe(0);
   });
@@ -187,7 +213,9 @@ describe("convertFile", () => {
     const dir = `${tmpdir()}/md2gd-dir-${Date.now()}`;
     mkdirSync(dir);
     const client = new StubClient();
-    await expect(convertFile(dir, {}, client)).rejects.toThrow(/^md2gd: cannot read \S+md2gd-dir-\d+: \S/);
+    await expect(convertFile(dir, {}, client)).rejects.toThrow(
+      expect.objectContaining({ code: "file_unreadable", meta: { path: dir, reason: "is a directory" } }),
+    );
     expect(client.createCalls).toBe(0);
   });
 });
@@ -214,11 +242,9 @@ describe("parseDocId", () => {
 
 describe("resolveUpdateTarget", () => {
   test("an explicit url/id argument wins over the mapping", async () => {
-    const target = await resolveUpdateTarget(
-      "doc.md",
-      "https://docs.google.com/document/d/explicit/edit",
-      "/nope.json",
-    );
+    const target = await resolveUpdateTarget("doc.md", "https://docs.google.com/document/d/explicit/edit", {
+      docs: {},
+    });
     expect(target).toBe("explicit");
   });
 
@@ -227,80 +253,66 @@ describe("resolveUpdateTarget", () => {
     const md = `${tmpdir()}/resolve-${Date.now()}.md`;
     await Bun.write(md, "# R\n");
     await recordDoc(md, "doc-remembered", cfg);
-    expect(await resolveUpdateTarget(md, undefined, cfg)).toBe("doc-remembered");
+    expect(await resolveUpdateTarget(md, undefined, await loadConfig(cfg))).toBe("doc-remembered");
+  });
+
+  test("names a path that needs quoting in its resolve as one shell word", async () => {
+    const cfg = `${tmpdir()}/md2gd-none-q-${Date.now()}.json`;
+    await expect(resolveUpdateTarget("my notes.md", undefined, await loadConfig(cfg))).rejects.toThrow(
+      expect.objectContaining({ resolve: "md2gd 'my notes.md' --update <url|id>" }),
+    );
   });
 
   test("errors when nothing is remembered and no argument is given", async () => {
     const cfg = `${tmpdir()}/md2gd-none-${Date.now()}.json`;
-    await expect(resolveUpdateTarget(`${tmpdir()}/unknown.md`, undefined, cfg)).rejects.toThrow(
-      /no document remembered/,
+    const path = `${tmpdir()}/unknown.md`;
+    await expect(resolveUpdateTarget(path, undefined, await loadConfig(cfg))).rejects.toThrow(
+      expect.objectContaining({ code: "no_document_remembered", kind: "refusal", meta: { path } }),
     );
   });
 });
 
+class InaccessibleClient extends StubClient {
+  batchUpdates = 0;
+  private readonly google = new GoogleDocsClient({
+    getToken: () => Promise.resolve("tok"),
+    fetchFn: () =>
+      Promise.resolve(Response.json({ error: { code: 404, errors: [{ reason: "notFound" }] } }, { status: 404 })),
+  });
+  override getDocument(id: string): Promise<DocumentResource> {
+    return this.google.getDocument(id);
+  }
+  override batchUpdate(_id: string, _requests: DocRequest[]): Promise<void> {
+    this.batchUpdates++;
+    return Promise.resolve();
+  }
+}
+
 describe("updateFile", () => {
-  test("translates a 404 on the read into an actionable message", async () => {
-    class NotFoundClient extends StubClient {
-      override getDocument(_id: string): Promise<DocumentResource> {
-        return Promise.reject(new Error("md2gd: Google API GET failed (404): File not found"));
-      }
-    }
+  test("refuses a target the read cannot open before writing to it", async () => {
     const md = `${tmpdir()}/upd-404-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");
-    await expect(updateFile(md, {}, new NotFoundClient(), "doc-x")).rejects.toThrow(
-      /cannot open document .* for update/,
+    const client = new InaccessibleClient();
+    await expect(updateFile(md, { folder: "DEST9" }, client, "doc-x")).rejects.toThrow(
+      expect.objectContaining({ code: "document_inaccessible" }),
     );
-  });
-
-  test("translates a 403 on the read into the same actionable message", async () => {
-    class ForbiddenClient extends StubClient {
-      override getDocument(_id: string): Promise<DocumentResource> {
-        return Promise.reject(new Error("md2gd: Google API GET failed (403): insufficient permission"));
-      }
-    }
-    const md = `${tmpdir()}/upd-403-${Date.now()}.md`;
-    await Bun.write(md, "# R\n\nBody.\n");
-    await expect(updateFile(md, {}, new ForbiddenClient(), "doc-x")).rejects.toThrow(
-      /cannot open document .* for update/,
-    );
-  });
-
-  test("records the file→doc mapping so a later no-arg update finds it", async () => {
-    const cfg = `${tmpdir()}/md2gd-adopt-${Date.now()}.json`;
-    const md = `${tmpdir()}/adopt-${Date.now()}.md`;
-    await Bun.write(md, "# R\n\nBody.\n");
-    await updateFile(md, {}, new StubClient(), "adopted-doc", cfg);
-    expect(await resolveUpdateTarget(md, undefined, cfg)).toBe("adopted-doc");
+    expect(client.batchUpdates).toBe(0);
+    expect(client.movedTo).toBeUndefined();
   });
 
   test("moves the doc when --folder is given on update (relocate)", async () => {
-    const cfg = `${tmpdir()}/md2gd-relocate-${Date.now()}.json`;
     const md = `${tmpdir()}/relocate-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");
     const client = new StubClient();
-    await updateFile(md, { folder: "https://drive.google.com/drive/folders/DEST9" }, client, "doc-x", cfg);
+    await updateFile(md, { folder: "https://drive.google.com/drive/folders/DEST9" }, client, "doc-x");
     expect(client.movedTo).toBe("DEST9");
   });
 
   test("does not move when --folder is absent on update", async () => {
-    const cfg = `${tmpdir()}/md2gd-norelocate-${Date.now()}.json`;
     const md = `${tmpdir()}/norelocate-${Date.now()}.md`;
     await Bun.write(md, "# R\n\nBody.\n");
     const client = new StubClient();
-    await updateFile(md, {}, client, "doc-x", cfg);
+    await updateFile(md, {}, client, "doc-x");
     expect(client.movedTo).toBeUndefined();
-  });
-
-  test("does not record when the update fails at the read", async () => {
-    class NotFoundClient extends StubClient {
-      override getDocument(_id: string): Promise<DocumentResource> {
-        return Promise.reject(new Error("md2gd: Google API GET failed (404): File not found"));
-      }
-    }
-    const cfg = `${tmpdir()}/md2gd-noadopt-${Date.now()}.json`;
-    const md = `${tmpdir()}/noadopt-${Date.now()}.md`;
-    await Bun.write(md, "# R\n\nBody.\n");
-    await expect(updateFile(md, {}, new NotFoundClient(), "missing", cfg)).rejects.toThrow();
-    await expect(resolveUpdateTarget(md, undefined, cfg)).rejects.toThrow(/no document remembered/);
   });
 });

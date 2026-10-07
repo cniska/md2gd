@@ -121,7 +121,14 @@ async function loadCredentials(): Promise<{ secretJson: string; client: ClientSe
       `render: no credentials. Set MD2GD_CLIENT_SECRET_JSON and MD2GD_TOKEN_JSON, or run \`md2gd init\` (looked in ${CLIENT_SECRET_PATH}, ${TOKEN_PATH})`,
     );
   }
-  return { secretJson, client: parseClientSecret(secretJson), token: StoredTokenSchema.parse(JSON.parse(tokenJson)) };
+  return {
+    secretJson,
+    client: parseClientSecret(
+      secretJson,
+      process.env.MD2GD_CLIENT_SECRET_JSON ? "MD2GD_CLIENT_SECRET_JSON" : CLIENT_SECRET_PATH,
+    ),
+    token: StoredTokenSchema.parse(JSON.parse(tokenJson)),
+  };
 }
 
 async function readIfExists(path: string): Promise<string | undefined> {

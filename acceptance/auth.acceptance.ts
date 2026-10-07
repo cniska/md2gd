@@ -1,19 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { documentIdOf, type Ran, withWorld } from "./support/world";
+import { documentIdOf, expectFailure, withWorld } from "./support/world";
 
 const CONSENT_PATH = "/o/oauth2/v2/auth";
 const DOC_URL = /^https:\/\/docs\.google\.com\/document\/d\/[\w-]+\/edit$/;
-
-function expectReadableFailure(ran: Ran, cause: RegExp): void {
-  expect(ran.exitCode).not.toBe(0);
-  const message = ran.stderr.trim();
-  expect(message.startsWith("md2gd:")).toBe(true);
-  expect(message.split("\n")).toHaveLength(1);
-  expect(message).not.toContain("    at ");
-  expect(message).toMatch(cause);
-}
 
 const consents = (opened: readonly string[]): string[] => opened.filter((url) => url.includes(CONSENT_PATH));
 
@@ -71,6 +62,20 @@ describe("requests stay on the configured Google origin", () => {
   });
 
   test.todo("AC-8 an update sends every request to MD2GD_GOOGLE_ORIGIN", () => {});
+
+  test("AC-8 init refuses an MD2GD_GOOGLE_ORIGIN that is not an http(s) origin and exits at once", async () => {
+    await withWorld(async (world) => {
+      const started = performance.now();
+      const ran = await world.run(["init", "--client", world.writeClientSecret()], { MD2GD_GOOGLE_ORIGIN: "nope" });
+
+      expect(performance.now() - started).toBeLessThan(5000);
+      expectFailure(
+        ran,
+        "md2gd: MD2GD_GOOGLE_ORIGIN must be an http or https origin, got: nope [google_origin_invalid]\nresolve: unset MD2GD_GOOGLE_ORIGIN or set it to an http(s) origin\n",
+      );
+      expect(world.google.requests).toEqual([]);
+    });
+  });
 });
 
 describe("credential storage and scope", () => {
@@ -117,7 +122,10 @@ describe("credential storage and scope", () => {
       rmSync(world.configDir, { recursive: true, force: true });
 
       const refused = await world.run([world.write("note.md", "# Note\n")]);
-      expectReadableFailure(refused, /init/);
+      expectFailure(
+        refused,
+        `md2gd: not set up: no client secret at ${join(world.configDir, "client_secret.json")} [not_set_up]\nresolve: md2gd init --client <client_secret.json>\n`,
+      );
 
       await world.init();
       expect(consents(world.opened())).toHaveLength(2);
@@ -133,7 +141,10 @@ describe("consent callback protection", () => {
 
       const ran = await world.run(["init", "--client", world.writeClientSecret()]);
 
-      expectReadableFailure(ran, /state/);
+      expectFailure(
+        ran,
+        "md2gd: the consent callback's state did not match; stopped for safety [consent_state_mismatch]\nresolve: md2gd init\n",
+      );
       expect(existsSync(join(world.configDir, "token.json"))).toBe(false);
       expect(world.google.requests.some((request) => request.path === "/token")).toBe(false);
     });
@@ -159,7 +170,7 @@ describe("consent callback protection", () => {
 
       const ran = await world.run(["init", "--client", world.writeClientSecret()]);
 
-      expectReadableFailure(ran, /denied/);
+      expectFailure(ran, "md2gd: Google consent was denied (access_denied) [consent_denied]\nresolve: md2gd init\n");
       expect(existsSync(join(world.configDir, "token.json"))).toBe(false);
     });
   });

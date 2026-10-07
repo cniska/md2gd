@@ -24,10 +24,10 @@ describe("googleEndpoint", () => {
 
   test("rejects an override that is not an http(s) origin", () => {
     expect(() => googleEndpoint("https://docs.googleapis.com/v1/documents", { MD2GD_GOOGLE_ORIGIN: "nope" })).toThrow(
-      "md2gd: MD2GD_GOOGLE_ORIGIN must be an http or https origin, got: nope",
+      expect.objectContaining({ code: "google_origin_invalid", kind: "refusal", meta: { value: "nope" } }),
     );
     expect(() =>
       googleEndpoint("https://docs.googleapis.com/v1/documents", { MD2GD_GOOGLE_ORIGIN: "http://127.0.0.1:1/path" }),
-    ).toThrow("md2gd: MD2GD_GOOGLE_ORIGIN must be an http or https origin");
+    ).toThrow(expect.objectContaining({ code: "google_origin_invalid", meta: { value: "http://127.0.0.1:1/path" } }));
   });
 });

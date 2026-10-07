@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { documentIdOf, type Ran, withWorld } from "./support/world";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { DOC_MIME } from "./support/google-fake";
+import { documentIdOf, expectFailure, type World, withWorld } from "./support/world";
 
 const RETRY_BACKOFF_ALLOWANCE_MS = 20_000;
 const FILES = /^\/drive\/v3\/files$/;
@@ -19,18 +22,12 @@ const permissionDenied = driveError(
 );
 const unavailable = { error: { code: 503, message: "The service is currently unavailable.", status: "UNAVAILABLE" } };
 
-function expectReadableFailure(ran: Ran, cause: RegExp): void {
-  expect(ran.exitCode).not.toBe(0);
-  const message = ran.stderr.trim();
-  expect(message.startsWith("md2gd:")).toBe(true);
-  expect(message.split("\n")).toHaveLength(1);
-  expect(message).not.toContain("    at ");
-  expect(message).toMatch(cause);
-}
+const createdDocument = (world: World): string =>
+  world.google.driveFiles().find((file) => file.mimeType === DOC_MIME)?.id ?? "no document";
 
 describe("failures end in a readable message", () => {
   test(
-    "AC-7 no network ends the run, once md2gd's retries have backed off, with a message naming the network",
+    "AC-7 no network ends the run, once md2gd's retries have backed off, naming the network",
     async () => {
       await withWorld(async (world) => {
         await world.init();
@@ -39,46 +36,74 @@ describe("failures end in a readable message", () => {
           MD2GD_GOOGLE_ORIGIN: "http://127.0.0.1:1",
         });
 
-        expectReadableFailure(ran, /cannot reach Google/);
+        expectFailure(
+          ran,
+          "md2gd: cannot reach Google for GET /drive/v3/files [google_unreachable]\nresolve: check your network connection, then run the command again\n",
+        );
       });
     },
     RETRY_BACKOFF_ALLOWANCE_MS,
   );
 
-  test.failing("AC-7 revoked consent ends the run with a message asking for init", async () => {
+  test("AC-7 revoked consent ends the run asking for init", async () => {
     await withWorld(async (world) => {
       await world.init();
       world.google.revokeRefreshTokens();
 
       const ran = await world.run([world.write("note.md", "# Note\n")]);
 
-      expectReadableFailure(ran, /init/);
+      expectFailure(
+        ran,
+        "md2gd: Google did not accept md2gd's sign-in for GET /drive/v3/files (401 UNAUTHENTICATED) [google_unauthenticated]\nresolve: md2gd init\n",
+      );
     });
   });
 
-  test("AC-7 Drive permission denied ends the run with a message naming the permission", async () => {
+  test("AC-7 revoked consent found on a token refresh ends the run asking for init", async () => {
+    await withWorld(async (world) => {
+      await world.init();
+      world.google.revokeRefreshTokens();
+      const token = join(world.configDir, "token.json");
+      writeFileSync(token, JSON.stringify({ ...JSON.parse(readFileSync(token, "utf8")), expiryDate: 0 }));
+
+      const ran = await world.run([world.write("note.md", "# Note\n")]);
+
+      expectFailure(
+        ran,
+        "md2gd: Google no longer accepts md2gd's stored authorization for POST /token (400 invalid_grant) [authorization_revoked]\nresolve: md2gd init\n",
+      );
+    });
+  });
+
+  test("AC-7 Drive permission denied ends the run naming the folder", async () => {
     await withWorld(async (world) => {
       await world.init();
       const folder = world.google.addFolder({ name: "Read only", role: "reader" });
 
       const ran = await world.run([world.write("note.md", "# Note\n"), "--folder", folder]);
 
-      expectReadableFailure(ran, /write to it|permission/);
+      expectFailure(
+        ran,
+        `md2gd: cannot write to folder ${folder} (403 insufficientFilePermissions) [folder_unwritable]\nresolve: check the folder URL or id and that you can write to it\n`,
+      );
     });
   });
 
-  test("AC-7 lasting rate limiting ends the run with a message naming the rate limit", async () => {
+  test("AC-7 lasting rate limiting ends the run naming the rate limit", async () => {
     await withWorld(async (world) => {
       await world.init();
       world.google.fail("GET", FILES, { status: 403, body: rateLimited, headers: FAST_RETRY }, 100);
 
       const ran = await world.run([world.write("note.md", "# Note\n")]);
 
-      expectReadableFailure(ran, /rate limit/);
+      expectFailure(
+        ran,
+        "md2gd: Google rate limit reached for GET /drive/v3/files (403 userRateLimitExceeded) [rate_limited]\nresolve: wait a minute, then run the command again\n",
+      );
     });
   });
 
-  test("AC-7 lasting 429 responses end the run with a message naming the rate limit", async () => {
+  test("AC-7 lasting 429 responses end the run naming the rate limit", async () => {
     await withWorld(async (world) => {
       await world.init();
       world.google.fail(
@@ -94,7 +119,10 @@ describe("failures end in a readable message", () => {
 
       const ran = await world.run([world.write("note.md", "# Note\n")]);
 
-      expectReadableFailure(ran, /rate limit/);
+      expectFailure(
+        ran,
+        "md2gd: Google rate limit reached for GET /drive/v3/files (429 RESOURCE_EXHAUSTED) [rate_limited]\nresolve: wait a minute, then run the command again\n",
+      );
     });
   });
 });
@@ -146,7 +174,10 @@ describe("retries", () => {
 
       const ran = await world.run([world.write("note.md", "# Note\n")]);
 
-      expect(ran.exitCode).not.toBe(0);
+      expectFailure(
+        ran,
+        `md2gd: Google is unavailable for POST /v1/documents/${createdDocument(world)}:batchUpdate (503 UNAVAILABLE) [google_unavailable]\nresolve: run the command again later\n`,
+      );
       expect(count(world.google.requests, "POST", BATCH_UPDATE)).toBe(1);
     });
   });
@@ -158,7 +189,10 @@ describe("retries", () => {
 
       const ran = await world.run([world.write("note.md", "# Note\n")]);
 
-      expectReadableFailure(ran, /cannot reach Google/);
+      expectFailure(
+        ran,
+        `md2gd: cannot reach Google for POST /v1/documents/${createdDocument(world)}:batchUpdate [google_unreachable]\nresolve: check your network connection, then run the command again\n`,
+      );
       expect(count(world.google.requests, "POST", BATCH_UPDATE)).toBe(1);
     });
   });
@@ -170,7 +204,10 @@ describe("retries", () => {
 
       const ran = await world.run([world.write("note.md", "# Note\n")]);
 
-      expectReadableFailure(ran, /permission/);
+      expectFailure(
+        ran,
+        "md2gd: Google denied GET /drive/v3/files (403 insufficientFilePermissions) [google_denied]\nresolve: check that your Google account can open and edit the file\n",
+      );
       expect(count(world.google.requests, "GET", FILES)).toBe(1);
     });
   });

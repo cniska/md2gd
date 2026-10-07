@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { viewOf } from "./support/doc-view";
-import { documentIdOf, type World, withWorld } from "./support/world";
+import { documentIdOf, expectFailure, type World, withWorld } from "./support/world";
 
 const REPO = join(import.meta.dir, "..");
 const VERSION = JSON.parse(readFileSync(join(REPO, "package.json"), "utf8")).version;
@@ -24,6 +24,43 @@ describe("the command line", () => {
         expect(ran.stdout).toContain("--title");
       });
     });
+
+  test("AC-6 an unknown option prints a usage error and exits 2", async () => {
+    await withWorld(async (world) => {
+      const ran = await world.run(["note.md", "--nope"]);
+
+      expect(ran.exitCode).toBe(2);
+      expect(ran.stdout).toBe("");
+      expect(ran.stderr).toBe("md2gd: unknown option: --nope [usage]\nresolve: md2gd --help\n");
+    });
+  });
+
+  test("AC-6 an unknown init option prints a usage error and exits 2", async () => {
+    await withWorld(async (world) => {
+      const ran = await world.run(["init", "--nope"]);
+
+      expect(ran.exitCode).toBe(2);
+      expect(ran.stderr).toBe("md2gd: unknown option: --nope [usage]\nresolve: md2gd --help\n");
+    });
+  });
+
+  test("AC-6 a flag missing its value prints a usage error and exits 2", async () => {
+    await withWorld(async (world) => {
+      const ran = await world.run(["note.md", "--title"]);
+
+      expect(ran.exitCode).toBe(2);
+      expect(ran.stderr).toBe("md2gd: --title needs a value [usage]\nresolve: md2gd --help\n");
+    });
+  });
+
+  test("AC-6 a run naming no file prints a usage error and exits 2", async () => {
+    await withWorld(async (world) => {
+      const ran = await world.run(["--open"]);
+
+      expect(ran.exitCode).toBe(2);
+      expect(ran.stderr).toBe("md2gd: expected a markdown file path [usage]\nresolve: md2gd --help\n");
+    });
+  });
 
   for (const flag of ["--version", "-V", "version"])
     test(`AC-6 ${flag} prints the version`, async () => {
@@ -78,6 +115,22 @@ describe("the command line", () => {
     });
   });
 
+  test("AC-6 --open with no browser to launch prints the doc URL, remembers the doc, then refuses naming it", async () => {
+    await withWorld(async (world) => {
+      await world.init();
+      const input = world.write("notes.md", "# Notes\n");
+      const ran = await world.run([input, "--open"], { PATH: "/nonexistent" });
+
+      const id = documents(world)[0]?.id ?? "no document";
+      expect(ran.stdout).toBe(`${docUrl(id)}\n`);
+      expectFailure(
+        ran,
+        `md2gd: cannot open a browser for ${docUrl(id)}: no such file or directory [browser_unopenable]\nresolve: open the URL printed above yourself\n`,
+      );
+      expect(documentIdOf(await world.run([input, "--update"]))).toBe(id);
+    });
+  });
+
   test("AC-6 a run without --open opens nothing", async () => {
     await withWorld(async (world) => {
       await world.init();
@@ -90,26 +143,34 @@ describe("the command line", () => {
 });
 
 describe("input files", () => {
-  async function expectRejected(world: World, args: readonly string[], mentions: RegExp): Promise<void> {
+  async function expectRejected(world: World, args: readonly string[], stderr: string): Promise<void> {
     const ran = await world.run(args);
 
-    expect(ran.exitCode).not.toBe(0);
+    expectFailure(ran, stderr);
     expect(ran.stdout).toBe("");
-    expect(ran.stderr).toMatch(mentions);
     expect(documents(world)).toEqual([]);
   }
 
   test("AC-14 a missing input file fails with a message naming it and creates no document", async () => {
     await withWorld(async (world) => {
       await world.init();
-      await expectRejected(world, ["absent.md"], /not found.*absent\.md/);
+      await expectRejected(
+        world,
+        ["absent.md"],
+        "md2gd: file not found: absent.md [file_not_found]\nresolve: check the path, then run the command again\n",
+      );
     });
   });
 
   test("AC-14 an empty input file fails with a message naming it and creates no document", async () => {
     await withWorld(async (world) => {
       await world.init();
-      await expectRejected(world, [world.write("blank.md", "")], /empty.*blank\.md/);
+      const input = world.write("blank.md", "");
+      await expectRejected(
+        world,
+        [input],
+        `md2gd: file is empty: ${input} [file_empty]\nresolve: add content to ${input}, then run the command again\n`,
+      );
     });
   });
 
@@ -118,7 +179,11 @@ describe("input files", () => {
       await world.init();
       const input = world.write("locked.md", "# Locked\n");
       chmodSync(input, 0o000);
-      await expectRejected(world, [input], /^md2gd: .*locked\.md/);
+      await expectRejected(
+        world,
+        [input],
+        `md2gd: cannot read ${input}: permission denied [file_unreadable]\nresolve: make ${input} readable, then run the command again\n`,
+      );
     });
   });
 
@@ -127,7 +192,11 @@ describe("input files", () => {
       await world.init();
       const input = join(world.work, "photo.png");
       writeFileSync(input, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48]));
-      await expectRejected(world, [input], /photo\.png/);
+      await expectRejected(
+        world,
+        [input],
+        `md2gd: not a Markdown file (binary content or not UTF-8): ${input} [file_not_markdown]\nresolve: save ${input} as UTF-8 text, then run the command again\n`,
+      );
     });
   });
 

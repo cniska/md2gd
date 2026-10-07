@@ -1,16 +1,27 @@
 import { z } from "zod";
+import { createFaulter, createRefuser } from "./coded-error";
 import { DEFAULT_FOLDER_NAME } from "./config";
 import { type DocRequest, type DocumentResource, DocumentResourceSchema } from "./docs";
 import type { DocsClient } from "./executor";
 import { googleEndpoint } from "./google-origin";
-import { type FetchFn, fetchWithRetry, isRateLimited, type Sleep } from "./http";
+import {
+  type FetchFn,
+  fetchWithRetry,
+  isResponseError,
+  type RequestMeta,
+  type ResponseMeta,
+  responseErrorOf,
+  type Sleep,
+  statusOf,
+} from "./http";
+import { parseJsonAs } from "./json";
 
 const DOCS_API = "https://docs.googleapis.com/v1/documents";
 const DRIVE_API = "https://www.googleapis.com/drive/v3/files";
 const FOLDER_MIME = "application/vnd.google-apps.folder";
 const DOC_MIME = "application/vnd.google-apps.document";
 
-const DriveFileSchema = z.looseObject({ id: z.string() });
+const DriveFileSchema = z.looseObject({ id: z.string().min(1) });
 const DriveFileListSchema = z.looseObject({ files: z.array(DriveFileSchema).default([]) });
 const DriveParentsSchema = z.looseObject({ parents: z.array(z.string()).default([]) });
 
@@ -31,14 +42,34 @@ function driveUrl(path = "", params: Record<string, string> = {}): string {
   return url.toString();
 }
 
-async function errorMessage(res: Response): Promise<string> {
-  const text = await res.text();
-  try {
-    const parsed = JSON.parse(text) as { error?: { message?: string } };
-    return parsed.error?.message ?? text.slice(0, 300);
-  } catch {
-    return text.slice(0, 300);
-  }
+const refuse = createRefuser<{
+  document_inaccessible: ResponseMeta & { documentId: string };
+  folder_unwritable: ResponseMeta & { folderId: string };
+}>({
+  document_inaccessible: {
+    message: (meta) => `cannot open document ${meta.documentId} (${statusOf(meta)})`,
+    resolve: () => "check the doc URL or id and that you can edit it",
+  },
+  folder_unwritable: {
+    message: (meta) => `cannot write to folder ${meta.folderId} (${statusOf(meta)})`,
+    resolve: () => "check the folder URL or id and that you can write to it",
+  },
+});
+
+const fault = createFaulter<{
+  google_response_invalid: RequestMeta & { problem: string };
+}>({
+  google_response_invalid: {
+    message: (meta) => `unexpected response from Google for ${meta.method} ${meta.path} (${meta.problem})`,
+  },
+});
+
+function folderRefusal(error: unknown, folderId: string): unknown {
+  const unwritable =
+    isResponseError(error, "google_denied") ||
+    (isResponseError(error, "google_rejected") && error.meta.reason === "invalidParent");
+  if (!unwritable) return error;
+  return refuse("folder_unwritable", { ...error.meta, folderId }, error);
 }
 
 export class GoogleDocsClient implements DocsClient {
@@ -64,12 +95,7 @@ export class GoogleDocsClient implements DocsClient {
       });
       return { documentId: doc.id };
     } catch (error) {
-      if (folderId && error instanceof Error && /\((?:403|404)\)/.test(error.message)) {
-        throw new Error(
-          `md2gd: cannot create in folder ${folderId} — check the folder URL and that you can write to it`,
-        );
-      }
-      throw error;
+      throw folderId ? folderRefusal(error, folderId) : error;
     }
   }
 
@@ -78,7 +104,12 @@ export class GoogleDocsClient implements DocsClient {
   }
 
   async getDocument(documentId: string): Promise<DocumentResource> {
-    return this.json(DocumentResourceSchema, "GET", googleEndpoint(`${DOCS_API}/${documentId}`));
+    try {
+      return await this.json(DocumentResourceSchema, "GET", googleEndpoint(`${DOCS_API}/${documentId}`));
+    } catch (error) {
+      if (!isResponseError(error, "google_denied")) throw error;
+      throw refuse("document_inaccessible", { ...error.meta, documentId }, error);
+    }
   }
 
   async renameDocument(documentId: string, name: string): Promise<void> {
@@ -93,12 +124,7 @@ export class GoogleDocsClient implements DocsClient {
     try {
       await this.json(z.unknown(), "PATCH", driveUrl(`/${documentId}`, params), {});
     } catch (error) {
-      if (error instanceof Error && /\((?:403|404)\)/.test(error.message)) {
-        throw new Error(
-          `md2gd: cannot move into folder ${folderId} — check the folder URL and that you can write to it`,
-        );
-      }
-      throw error;
+      throw folderRefusal(error, folderId);
     }
   }
 
@@ -128,14 +154,13 @@ export class GoogleDocsClient implements DocsClient {
     if (body !== undefined) init.body = JSON.stringify(body);
 
     const res = await fetchWithRetry(this.fetchFn, url, init, this.sleep);
-    if (await isRateLimited(res)) throw new Error("md2gd: Google API rate limit reached — wait a minute and try again");
-    if (!res.ok) throw new Error(`md2gd: Google API ${method} failed (${res.status}): ${await errorMessage(res)}`);
-    const parsed = schema.safeParse(await res.json().catch(() => undefined));
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      const where = issue?.path.join(".") || "body";
-      throw new Error(
-        `md2gd: unexpected response from Google API ${method} ${new URL(url).pathname} (${where}: ${issue?.message})`,
+    if (!res.ok) throw await responseErrorOf(res, method, url);
+    const parsed = parseJsonAs(schema, await res.text());
+    if (!parsed.ok) {
+      throw fault(
+        "google_response_invalid",
+        { method, path: new URL(url).pathname, problem: parsed.problem },
+        parsed.cause,
       );
     }
     return parsed.data;

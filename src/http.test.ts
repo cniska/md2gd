@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { type FetchFn, fetchWithRetry } from "./http";
+import { type FetchFn, fetchWithRetry, responseErrorOf } from "./http";
+
+const FILES_URL = "https://www.googleapis.com/drive/v3/files?q=x";
 
 function sequence(replies: (number | Error | Response)[]): { fetchFn: FetchFn; calls: () => number } {
   let i = 0;
@@ -75,13 +77,18 @@ describe("fetchWithRetry", () => {
     expect(waits).toHaveLength(3);
   });
 
-  test("retries a dropped connection, then reports it as a network problem", async () => {
-    const { fetchFn, calls } = sequence([new TypeError("Unable to connect")]);
+  test("retries a dropped connection, then reports it as a network problem carrying the cause", async () => {
+    const dropped = new TypeError("Unable to connect");
+    const { fetchFn, calls } = sequence([dropped]);
     const { sleep } = recordSleeps();
-    const error = await fetchWithRetry(fetchFn, "u", {}, sleep).catch((e: Error) => e);
-    expect(error).toBeInstanceOf(Error);
-    expect((error as Error).message).toBe("md2gd: cannot reach Google — check your network connection");
-    expect((error as Error).cause).toBeInstanceOf(TypeError);
+    await expect(fetchWithRetry(fetchFn, FILES_URL, {}, sleep)).rejects.toThrow(
+      expect.objectContaining({
+        code: "google_unreachable",
+        kind: "refusal",
+        meta: { method: "GET", path: "/drive/v3/files" },
+        cause: dropped,
+      }),
+    );
     expect(calls()).toBe(4);
   });
 
@@ -103,8 +110,8 @@ describe("fetchWithRetry", () => {
   test("reports a dropped write at once rather than resending it", async () => {
     const { fetchFn, calls } = sequence([new TypeError("Unable to connect"), 200]);
     const { sleep } = recordSleeps();
-    await expect(fetchWithRetry(fetchFn, "u", { method: "POST" }, sleep)).rejects.toThrow(
-      "md2gd: cannot reach Google — check your network connection",
+    await expect(fetchWithRetry(fetchFn, FILES_URL, { method: "POST" }, sleep)).rejects.toThrow(
+      expect.objectContaining({ code: "google_unreachable", meta: { method: "POST", path: "/drive/v3/files" } }),
     );
     expect(calls()).toBe(1);
   });
@@ -130,5 +137,80 @@ describe("fetchWithRetry", () => {
     const { fetchFn } = sequence([new TypeError("Unable to connect"), 200]);
     const { sleep } = recordSleeps();
     expect((await fetchWithRetry(fetchFn, "u", {}, sleep)).status).toBe(200);
+  });
+});
+
+describe("responseErrorOf", () => {
+  test("keeps Google's message on one line, so the report stays two lines", async () => {
+    const body = {
+      error: {
+        code: 400,
+        message: "Invalid requests[0]:\n  ✖ bad index\n    → at requests",
+        status: "INVALID_ARGUMENT",
+      },
+    };
+    expect(
+      (await responseErrorOf(new Response(JSON.stringify(body), { status: 400 }), "POST", FILES_URL)).meta.detail,
+    ).toBe("Invalid requests[0]: ✖ bad index → at requests");
+    expect(
+      (await responseErrorOf(new Response("<html>\n<body>Bad</body>\n</html>", { status: 400 }), "POST", FILES_URL))
+        .meta.detail,
+    ).toBe("<html> <body>Bad</body> </html>");
+  });
+
+  const reply = (status: number, body: unknown) =>
+    new Response(typeof body === "string" ? body : JSON.stringify(body), { status });
+  const driveBody = (reason: string) => ({ error: { code: 403, message: "m", errors: [{ reason }] } });
+  const docsBody = (status: string) => ({ error: { code: 404, message: "Requested entity was not found.", status } });
+  const classify = (res: Response) => responseErrorOf(res, "GET", FILES_URL);
+
+  test("takes the reason from Drive's errors list", async () => {
+    expect(await classify(reply(403, driveBody("insufficientFilePermissions")))).toMatchObject({
+      code: "google_denied",
+      kind: "refusal",
+      meta: { method: "GET", path: "/drive/v3/files", status: 403, reason: "insufficientFilePermissions" },
+    });
+  });
+
+  test("takes the reason from the Docs API's status", async () => {
+    expect(await classify(reply(404, docsBody("NOT_FOUND")))).toMatchObject({
+      code: "google_denied",
+      meta: { status: 404, reason: "NOT_FOUND" },
+    });
+  });
+
+  test("takes the reason from the token endpoint's error string", async () => {
+    expect(await classify(reply(400, { error: "invalid_request", error_description: "Bad" }))).toMatchObject({
+      meta: { status: 400, reason: "invalid_request" },
+    });
+  });
+
+  test("has no reason for a body carrying none, or one that is not JSON", async () => {
+    expect((await classify(reply(404, { error: { code: 404, message: "gone" } }))).meta.reason).toBeNull();
+    expect((await classify(reply(404, "<html>Not Found</html>"))).meta.reason).toBeNull();
+    expect((await classify(reply(404, { unrelated: true }))).meta.reason).toBeNull();
+  });
+
+  test("names rate limiting, by a 429 or by Drive's 403 reason", async () => {
+    expect((await classify(reply(429, {}))).code).toBe("rate_limited");
+    expect((await classify(reply(403, driveBody("userRateLimitExceeded")))).code).toBe("rate_limited");
+  });
+
+  test("names a 401 as an unaccepted sign-in", async () => {
+    expect((await classify(reply(401, docsBody("UNAUTHENTICATED")))).code).toBe("google_unauthenticated");
+  });
+
+  test("names a server error as Google being unavailable", async () => {
+    expect((await classify(reply(503, docsBody("UNAVAILABLE")))).code).toBe("google_unavailable");
+  });
+
+  test("names any other client error a fault in md2gd, carrying Google's message", async () => {
+    expect(
+      await classify(reply(400, { error: { code: 400, message: "Invalid range", status: "INVALID_ARGUMENT" } })),
+    ).toMatchObject({
+      code: "google_rejected",
+      kind: "fault",
+      meta: { status: 400, reason: "INVALID_ARGUMENT", detail: "Invalid range" },
+    });
   });
 });

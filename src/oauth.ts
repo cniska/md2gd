@@ -1,14 +1,24 @@
 import { z } from "zod";
-import { SCOPES } from "./config";
+import { createFaulter, createRefuser } from "./coded-error";
+import { SCOPES, TOKEN_PATH } from "./config";
 import { googleEndpoint } from "./google-origin";
-import { type FetchFn, fetchWithRetry } from "./http";
+import {
+  type FetchFn,
+  fetchWithRetry,
+  isResponseError,
+  type RequestMeta,
+  type ResponseMeta,
+  responseErrorOf,
+  statusOf,
+} from "./http";
+import { parseJsonAs } from "./json";
 import { isExpired, loadToken, type StoredToken, saveToken } from "./tokens";
 
 const AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token";
 
 const ClientSecretSchema = z.object({
-  installed: z.object({ client_id: z.string(), client_secret: z.string() }),
+  installed: z.object({ client_id: z.string().min(1), client_secret: z.string().min(1) }),
 });
 
 export interface ClientSecret {
@@ -17,14 +27,47 @@ export interface ClientSecret {
 }
 
 const TokenResponseSchema = z.object({
-  access_token: z.string(),
+  access_token: z.string().min(1),
   expires_in: z.number(),
   refresh_token: z.string().optional(),
 });
 
-export function parseClientSecret(json: string): ClientSecret {
-  const parsed = ClientSecretSchema.parse(JSON.parse(json));
-  return { clientId: parsed.installed.client_id, clientSecret: parsed.installed.client_secret };
+const refuse = createRefuser<{
+  authorization_revoked: ResponseMeta;
+  client_rejected: ResponseMeta;
+  client_secret_invalid: { path: string; problem: string };
+  not_authenticated: { path: string };
+}>({
+  authorization_revoked: {
+    message: (meta) =>
+      `Google no longer accepts md2gd's stored authorization for ${meta.method} ${meta.path} (${statusOf(meta)})`,
+    resolve: () => "md2gd init",
+  },
+  client_rejected: {
+    message: (meta) => `Google rejected md2gd's OAuth client for ${meta.method} ${meta.path} (${statusOf(meta)})`,
+    resolve: () => "md2gd init --client <client_secret.json>",
+  },
+  client_secret_invalid: {
+    message: ({ path, problem }) => `not an installed-app client secret: ${path} (${problem})`,
+    resolve: () => "md2gd init --client <client_secret.json>",
+  },
+  not_authenticated: {
+    message: ({ path }) => `not signed in to Google: no token at ${path}`,
+    resolve: () => "md2gd init",
+  },
+});
+
+const fault = createFaulter<{ token_response_invalid: RequestMeta & { problem: string }; no_refresh_token: object }>({
+  no_refresh_token: { message: () => "Google granted offline consent without a refresh token" },
+  token_response_invalid: {
+    message: (meta) => `unexpected token response from Google for ${meta.method} ${meta.path} (${meta.problem})`,
+  },
+});
+
+export function parseClientSecret(json: string, path: string): ClientSecret {
+  const parsed = parseJsonAs(ClientSecretSchema, json);
+  if (!parsed.ok) throw refuse("client_secret_invalid", { path, problem: parsed.problem }, parsed.cause);
+  return { clientId: parsed.data.installed.client_id, clientSecret: parsed.data.installed.client_secret };
 }
 
 export interface AuthUrlParams {
@@ -60,19 +103,25 @@ export async function createPkce(): Promise<{ verifier: string; challenge: strin
 }
 
 async function postToken(fetchFn: FetchFn, body: URLSearchParams): Promise<z.infer<typeof TokenResponseSchema>> {
-  const res = await fetchWithRetry(fetchFn, googleEndpoint(TOKEN_ENDPOINT), {
+  const url = googleEndpoint(TOKEN_ENDPOINT);
+  const res = await fetchWithRetry(fetchFn, url, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: body.toString(),
   });
   if (!res.ok) {
-    const detail = await res.text();
-    if (detail.includes("invalid_grant")) {
-      throw new Error("md2gd: stored authorization is no longer valid; run `md2gd init` again");
-    }
-    throw new Error(`md2gd: token request failed (${res.status})`);
+    const error = await responseErrorOf(res, "POST", url);
+    throw error.meta.reason === "invalid_client" ? refuse("client_rejected", error.meta, error) : error;
   }
-  return TokenResponseSchema.parse(await res.json());
+  const parsed = parseJsonAs(TokenResponseSchema, await res.text());
+  if (!parsed.ok) {
+    throw fault(
+      "token_response_invalid",
+      { method: "POST", path: new URL(url).pathname, problem: parsed.problem },
+      parsed.cause,
+    );
+  }
+  return parsed.data;
 }
 
 export async function exchangeCode(
@@ -92,7 +141,7 @@ export async function exchangeCode(
     code_verifier: codeVerifier,
   });
   const res = await postToken(fetchFn, body);
-  if (!res.refresh_token) throw new Error("md2gd: no refresh token returned; re-run init");
+  if (!res.refresh_token) throw fault("no_refresh_token", {});
   return { accessToken: res.access_token, refreshToken: res.refresh_token, expiryDate: now + res.expires_in * 1000 };
 }
 
@@ -108,7 +157,10 @@ export async function refreshToken(
     refresh_token: refresh,
     grant_type: "refresh_token",
   });
-  const res = await postToken(fetchFn, body);
+  const res = await postToken(fetchFn, body).catch((error: unknown) => {
+    const revoked = isResponseError(error, "google_rejected") && error.meta.reason === "invalid_grant";
+    throw revoked ? refuse("authorization_revoked", error.meta, error) : error;
+  });
   return {
     accessToken: res.access_token,
     refreshToken: res.refresh_token ?? refresh,
@@ -116,12 +168,17 @@ export async function refreshToken(
   };
 }
 
-export async function getAccessToken(client: ClientSecret, now: number, fetchFn: FetchFn = fetch): Promise<string> {
-  const cached = await loadToken();
-  if (!cached) throw new Error("md2gd: not authenticated; run `md2gd init` first");
+export async function getAccessToken(
+  client: ClientSecret,
+  now: number,
+  fetchFn: FetchFn = fetch,
+  path: string = TOKEN_PATH,
+): Promise<string> {
+  const cached = await loadToken(path);
+  if (!cached) throw refuse("not_authenticated", { path });
   if (!isExpired(cached, now)) return cached.accessToken;
 
   const refreshed = await refreshToken(client, cached.refreshToken, now, fetchFn);
-  await saveToken(refreshed);
+  saveToken(refreshed, path);
   return refreshed.accessToken;
 }

@@ -352,3 +352,82 @@ describe("updateDocument", () => {
     expect(client.moves).toHaveLength(0);
   });
 });
+
+describe("executor invariants", () => {
+  const tableMarkdown = "| A | B |\n|---|---|\n| 1 | 2 |\n";
+
+  test("a read-back with no table where one was inserted is a fault", async () => {
+    const client = new MockClient([{ documentStyle: A4, body: { content: [] } }]);
+    await expect(executeDocument(client, "T", planDocument(parseMarkdown(tableMarkdown)))).rejects.toThrow(
+      expect.objectContaining({ code: "table_not_found", kind: "fault", meta: { documentId: "doc-1", index: 1 } }),
+    );
+  });
+
+  test("a read-back with no table where a quote was inserted is a fault", async () => {
+    const client = new MockClient([{ documentStyle: A4, body: { content: [] } }]);
+    await expect(executeDocument(client, "T", planDocument(parseMarkdown("> quoted\n")))).rejects.toThrow(
+      expect.objectContaining({ code: "quote_not_found", kind: "fault", meta: { documentId: "doc-1", index: 1 } }),
+    );
+  });
+
+  const tableAt2 = (cell: (row: number, col: number) => unknown): DocumentResource =>
+    ({
+      documentStyle: A4,
+      body: {
+        content: [
+          {
+            startIndex: 2,
+            endIndex: 12,
+            table: {
+              rows: 2,
+              columns: 2,
+              tableRows: [0, 1].map((row) => ({ tableCells: [0, 1].map((col) => cell(row, col)) })),
+            },
+          },
+        ],
+      },
+    }) as unknown as DocumentResource;
+
+  test("a read-back table with a cell that has no index is a fault", async () => {
+    const client = new MockClient([tableAt2(() => ({ content: [] }))]);
+    await expect(executeDocument(client, "T", planDocument(parseMarkdown(tableMarkdown)))).rejects.toThrow(
+      expect.objectContaining({ code: "cell_index_missing", kind: "fault", meta: { documentId: "doc-1", index: 2 } }),
+    );
+  });
+
+  test("a filled table missing from the final read-back is a fault", async () => {
+    const located = tableAt2((row, col) => ({ content: [{ startIndex: 4 + row * 4 + col * 2 }] }));
+    const client = new MockClient([located, { documentStyle: A4, body: { content: [] } }]);
+    await expect(executeDocument(client, "T", planDocument(parseMarkdown(tableMarkdown)))).rejects.toThrow(
+      expect.objectContaining({
+        code: "filled_table_not_found",
+        kind: "fault",
+        meta: { documentId: "doc-1", index: 2 },
+      }),
+    );
+  });
+
+  test("a document without a page size to fit a table to is a fault", async () => {
+    const located = {
+      body: {
+        content: [
+          {
+            startIndex: 2,
+            endIndex: 12,
+            table: {
+              rows: 2,
+              columns: 2,
+              tableRows: [0, 1].map((row) => ({
+                tableCells: [0, 1].map((col) => ({ content: [{ startIndex: 4 + row * 4 + col * 2 }] })),
+              })),
+            },
+          },
+        ],
+      },
+    } as unknown as DocumentResource;
+    const client = new MockClient([located]);
+    await expect(executeDocument(client, "T", planDocument(parseMarkdown(tableMarkdown)))).rejects.toThrow(
+      expect.objectContaining({ code: "page_size_missing", kind: "fault", meta: { documentId: "doc-1" } }),
+    );
+  });
+});

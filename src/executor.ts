@@ -1,3 +1,4 @@
+import { createFaulter } from "./coded-error";
 import { convertLeaves } from "./convert";
 import {
   BODY_START_INDEX,
@@ -21,6 +22,33 @@ import {
   tableRowStyle,
 } from "./style";
 import { columnWidths, type TablePlan } from "./table";
+
+interface DocumentIndex {
+  documentId: string;
+  index: number;
+}
+
+const fault = createFaulter<{
+  table_not_found: DocumentIndex;
+  quote_not_found: DocumentIndex;
+  filled_table_not_found: DocumentIndex;
+  cell_index_missing: DocumentIndex;
+  page_size_missing: { documentId: string };
+}>({
+  table_not_found: {
+    message: ({ documentId, index }) => `the table inserted at ${index} is not in document ${documentId}`,
+  },
+  quote_not_found: {
+    message: ({ documentId, index }) => `the quote inserted at ${index} is not in document ${documentId}`,
+  },
+  filled_table_not_found: {
+    message: ({ documentId, index }) => `the filled table at ${index} is not in document ${documentId}`,
+  },
+  cell_index_missing: {
+    message: ({ documentId, index }) => `a cell of the table at ${index} in document ${documentId} has no index`,
+  },
+  page_size_missing: { message: ({ documentId }) => `document ${documentId} has no page size to fit tables to` },
+});
 
 export interface DocsClient {
   createDocument(title: string, folderId?: string): Promise<{ documentId: string }>;
@@ -48,17 +76,7 @@ export async function updateDocument(
   segments: Segment[],
   folderId?: string,
 ): Promise<void> {
-  let doc: DocumentResource;
-  try {
-    doc = await client.getDocument(documentId);
-  } catch (error) {
-    if (error instanceof Error && /\((?:403|404)\)/.test(error.message)) {
-      throw new Error(
-        `md2gd: cannot open document ${documentId} for update — check the URL/id and that you have edit access`,
-      );
-    }
-    throw error;
-  }
+  const doc = await client.getDocument(documentId);
 
   if (folderId) await client.moveDocument(documentId, folderId);
   const clear = clearBodyRequests(doc);
@@ -133,9 +151,9 @@ async function insertTableSegment(
   ]);
 
   const doc = await client.getDocument(documentId);
-  const located = locateTable(doc, atIndex);
-  if (!located) throw new Error("md2gd: inserted table not found in document");
-  const contentWidth = pageContentWidth(doc) - inset;
+  const located = locateTable(doc, documentId, atIndex);
+  if (located === null) throw fault("table_not_found", { documentId, index: atIndex });
+  const contentWidth = pageContentWidth(doc, documentId) - inset;
 
   const requests: DocRequest[] = [
     ...preTableSpacerRequests(located.startIndex),
@@ -147,7 +165,7 @@ async function insertTableSegment(
   ];
   await client.batchUpdate(documentId, requests);
 
-  return tableEndIndex(await client.getDocument(documentId), located.startIndex);
+  return tableEndIndex(await client.getDocument(documentId), documentId, located.startIndex);
 }
 
 async function insertQuoteSegment(
@@ -159,11 +177,12 @@ async function insertQuoteSegment(
 ): Promise<number> {
   await client.batchUpdate(documentId, [{ insertTable: { rows: 1, columns: 1, location: { index: atIndex } } }]);
   const doc = await client.getDocument(documentId);
-  const located = locateTable(doc, atIndex);
-  const cellStart = located?.cellIndices[0]?.[0];
-  if (!located || cellStart === undefined) throw new Error("md2gd: inserted quote not found in document");
+  const located = locateTable(doc, documentId, atIndex);
+  if (located === null) throw fault("quote_not_found", { documentId, index: atIndex });
+  const cellStart = located.cellIndices[0]?.[0];
+  if (cellStart === undefined) throw fault("cell_index_missing", { documentId, index: located.startIndex });
 
-  const width = pt(pageContentWidth(doc) - inset);
+  const width = pt(pageContentWidth(doc, documentId) - inset);
   await client.batchUpdate(documentId, [
     ...preTableSpacerRequests(located.startIndex),
     {
@@ -191,13 +210,13 @@ async function insertQuoteSegment(
   if (last !== undefined && last.kind !== "linear")
     await client.batchUpdate(documentId, spacerRequests(end, preTableParagraphStyle));
 
-  return tableEndIndex(await client.getDocument(documentId), located.startIndex);
+  return tableEndIndex(await client.getDocument(documentId), documentId, located.startIndex);
 }
 
-function pageContentWidth(doc: DocumentResource): number {
+function pageContentWidth(doc: DocumentResource, documentId: string): number {
   const style = doc.documentStyle;
   const page = style?.pageSize?.width?.magnitude;
-  if (page === undefined) throw new Error("md2gd: document has no page size to fit tables to");
+  if (page === undefined) throw fault("page_size_missing", { documentId });
   return page - (style?.marginLeft?.magnitude ?? 0) - (style?.marginRight?.magnitude ?? 0);
 }
 
@@ -206,41 +225,39 @@ interface LocatedTable {
   cellIndices: number[][];
 }
 
-function findTable(
-  content: DocStructuralElement[],
-  matches: (start: number) => boolean,
-): DocStructuralElement | undefined {
+function findTable(content: DocStructuralElement[], matches: (start: number) => boolean): DocStructuralElement | null {
   for (const element of content) {
     if (!element.table || element.startIndex === undefined) continue;
     if (matches(element.startIndex)) return element;
     for (const row of element.table.tableRows) {
       for (const cell of row.tableCells) {
         const found = findTable(cell.content, matches);
-        if (found) return found;
+        if (found !== null) return found;
       }
     }
   }
-  return undefined;
+  return null;
 }
 
-function tableEndIndex(doc: DocumentResource, tableStart: number): number {
+function tableEndIndex(doc: DocumentResource, documentId: string, tableStart: number): number {
   const end = findTable(doc.body?.content ?? [], (start) => start === tableStart)?.endIndex;
-  if (end === undefined) throw new Error("md2gd: filled table not found in document");
+  if (end === undefined) throw fault("filled_table_not_found", { documentId, index: tableStart });
   return end;
 }
 
-function locateTable(doc: DocumentResource, atIndex: number): LocatedTable | undefined {
+function locateTable(doc: DocumentResource, documentId: string, atIndex: number): LocatedTable | null {
   const element = findTable(doc.body?.content ?? [], (start) => start >= atIndex);
-  if (!element?.table || element.startIndex === undefined) return undefined;
+  if (!element?.table || element.startIndex === undefined) return null;
+  const tableStart = element.startIndex;
 
   const cellIndices = element.table.tableRows.map((row) =>
     row.tableCells.map((cell) => {
       const index = cell.content[0]?.startIndex;
-      if (index === undefined) throw new Error("md2gd: table cell has no content index");
+      if (index === undefined) throw fault("cell_index_missing", { documentId, index: tableStart });
       return index;
     }),
   );
-  return { startIndex: element.startIndex, cellIndices };
+  return { startIndex: tableStart, cellIndices };
 }
 
 function preTableSpacerRequests(tableStart: number): DocRequest[] {

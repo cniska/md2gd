@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { tmpdir } from "node:os";
 import type { FetchFn } from "./http";
-import { buildAuthUrl, createPkce, exchangeCode, parseClientSecret, refreshToken } from "./oauth";
+import { buildAuthUrl, createPkce, exchangeCode, getAccessToken, parseClientSecret, refreshToken } from "./oauth";
 
 const CLIENT = { clientId: "cid", clientSecret: "secret" };
 
@@ -11,7 +12,34 @@ function jsonResponse(body: unknown, ok = true): Response {
 describe("parseClientSecret", () => {
   test("reads client id and secret from an installed-app file", () => {
     const json = JSON.stringify({ installed: { client_id: "x", client_secret: "y", redirect_uris: [] } });
-    expect(parseClientSecret(json)).toEqual({ clientId: "x", clientSecret: "y" });
+    expect(parseClientSecret(json, "cs.json")).toEqual({ clientId: "x", clientSecret: "y" });
+  });
+
+  test("refuses a file that is not JSON", () => {
+    expect(() => parseClientSecret("{ nope", "cs.json")).toThrow(
+      expect.objectContaining({
+        code: "client_secret_invalid",
+        kind: "refusal",
+        meta: expect.objectContaining({ path: "cs.json" }),
+      }),
+    );
+  });
+
+  test("refuses a secret with an empty client id, before any consent is asked", () => {
+    const json = JSON.stringify({ installed: { client_id: "", client_secret: "y" } });
+    expect(() => parseClientSecret(json, "cs.json")).toThrow(
+      expect.objectContaining({ code: "client_secret_invalid", meta: expect.objectContaining({ path: "cs.json" }) }),
+    );
+  });
+
+  test("refuses a web-app secret, which lacks the installed-app block", () => {
+    const json = JSON.stringify({ web: { client_id: "x", client_secret: "y" } });
+    expect(() => parseClientSecret(json, "cs.json")).toThrow(
+      expect.objectContaining({
+        code: "client_secret_invalid",
+        meta: { path: "cs.json", problem: "installed: Invalid input: expected object, received undefined" },
+      }),
+    );
   });
 });
 
@@ -51,10 +79,26 @@ describe("exchangeCode", () => {
     expect(token).toEqual({ accessToken: "at", refreshToken: "rt", expiryDate: 1_000 + 3600 * 1000 });
   });
 
-  test("throws when Google returns no refresh token", async () => {
+  test("leaves a code exchange Google refuses a fault, not a revoked authorization", async () => {
+    const mockFetch: FetchFn = () => Promise.resolve(jsonResponse({ error: "invalid_grant" }, false));
+    await expect(exchangeCode(CLIENT, "c", "http://127.0.0.1:9000", "v", 0, mockFetch)).rejects.toThrow(
+      expect.objectContaining({ code: "google_rejected", kind: "fault" }),
+    );
+  });
+
+  test("names a consent that returns no refresh token a fault", async () => {
     const mockFetch: FetchFn = () => Promise.resolve(jsonResponse({ access_token: "at", expires_in: 3600 }));
     await expect(exchangeCode(CLIENT, "c", "http://127.0.0.1:9000", "v", 0, mockFetch)).rejects.toThrow(
-      /refresh token/,
+      expect.objectContaining({ code: "no_refresh_token", kind: "fault" }),
+    );
+  });
+});
+
+describe("getAccessToken", () => {
+  test("refuses a run with no stored token", async () => {
+    const path = `${tmpdir()}/md2gd-no-token-${Date.now()}.json`;
+    await expect(getAccessToken(CLIENT, 0, fetch, path)).rejects.toThrow(
+      expect.objectContaining({ code: "not_authenticated", kind: "refusal", meta: { path } }),
     );
   });
 });
@@ -66,8 +110,46 @@ describe("refreshToken", () => {
     expect(token).toEqual({ accessToken: "new", refreshToken: "keep-me", expiryDate: 5_000 + 1800 * 1000 });
   });
 
-  test("throws on a non-ok token response", async () => {
-    const mockFetch: FetchFn = () => Promise.resolve(jsonResponse({ error: "bad" }, false));
-    await expect(refreshToken(CLIENT, "r", 0, mockFetch)).rejects.toThrow(/token request failed/);
+  test("leaves a token request Google rejects for another reason a fault, with its reason", async () => {
+    const mockFetch: FetchFn = () => Promise.resolve(jsonResponse({ error: "unsupported_grant_type" }, false));
+    await expect(refreshToken(CLIENT, "r", 0, mockFetch)).rejects.toThrow(
+      expect.objectContaining({
+        code: "google_rejected",
+        kind: "fault",
+        meta: expect.objectContaining({ path: "/token", status: 400, reason: "unsupported_grant_type" }),
+      }),
+    );
+  });
+
+  test("refuses a refresh token Google has revoked", async () => {
+    const mockFetch: FetchFn = () =>
+      Promise.resolve(
+        jsonResponse({ error: "invalid_grant", error_description: "Token has been expired or revoked." }, false),
+      );
+    await expect(refreshToken(CLIENT, "r", 0, mockFetch)).rejects.toThrow(
+      expect.objectContaining({
+        code: "authorization_revoked",
+        kind: "refusal",
+        meta: expect.objectContaining({ status: 400, reason: "invalid_grant" }),
+      }),
+    );
+  });
+
+  test("refuses a client Google does not recognise", async () => {
+    const mockFetch: FetchFn = () =>
+      Promise.resolve(new Response(JSON.stringify({ error: "invalid_client" }), { status: 401 }));
+    await expect(refreshToken(CLIENT, "r", 0, mockFetch)).rejects.toThrow(
+      expect.objectContaining({
+        code: "client_rejected",
+        meta: expect.objectContaining({ method: "POST", path: "/token", status: 401, reason: "invalid_client" }),
+      }),
+    );
+  });
+
+  test("names a token response missing the access token a fault", async () => {
+    const mockFetch: FetchFn = () => Promise.resolve(jsonResponse({ expires_in: 3600 }));
+    await expect(refreshToken(CLIENT, "r", 0, mockFetch)).rejects.toThrow(
+      expect.objectContaining({ code: "token_response_invalid", kind: "fault" }),
+    );
   });
 });

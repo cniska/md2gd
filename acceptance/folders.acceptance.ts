@@ -1,16 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { documentIdOf, type Ran, type World, withWorld } from "./support/world";
+import { DOC_MIME } from "./support/google-fake";
+import { documentIdOf, expectFailure, type World, withWorld } from "./support/world";
 
-const DOC_MIME = "application/vnd.google-apps.document";
-
-function expectReadableFailure(ran: Ran, cause: RegExp): void {
-  expect(ran.exitCode).not.toBe(0);
-  const message = ran.stderr.trim();
-  expect(message.startsWith("md2gd:")).toBe(true);
-  expect(message.split("\n")).toHaveLength(1);
-  expect(message).not.toContain("    at ");
-  expect(message).toMatch(cause);
-}
+const unwritable = (folder: string, status: string): string =>
+  `md2gd: cannot write to folder ${folder} (${status}) [folder_unwritable]\nresolve: check the folder URL or id and that you can write to it\n`;
 
 const documents = (world: World): string[] =>
   world.google
@@ -76,7 +69,7 @@ describe("--folder on a create", () => {
 
       const ran = await world.run([world.write("note.md", "# Note\n"), "--folder", "missingFolderId1234567890"]);
 
-      expectReadableFailure(ran, /folder/);
+      expectFailure(ran, unwritable("missingFolderId1234567890", "404 notFound"));
       expect(documents(world)).toEqual([]);
     });
   });
@@ -88,7 +81,7 @@ describe("--folder on a create", () => {
 
       const ran = await world.run([world.write("note.md", "# Note\n"), "--folder", folder]);
 
-      expectReadableFailure(ran, /folder/);
+      expectFailure(ran, unwritable(folder, "403 insufficientFilePermissions"));
       expect(documents(world)).toEqual([]);
     });
   });
@@ -100,7 +93,7 @@ describe("--folder on a create", () => {
 
       const ran = await world.run([world.write("note.md", "# Note\n"), "--folder", notAFolder]);
 
-      expectReadableFailure(ran, /folder/);
+      expectFailure(ran, unwritable(notAFolder, "400 invalidParent"));
       expect(documents(world)).toEqual([notAFolder]);
     });
   });

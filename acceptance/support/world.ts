@@ -1,3 +1,4 @@
+import { expect } from "bun:test";
 import {
   chmodSync,
   existsSync,
@@ -136,6 +137,11 @@ export function documentIdOf(ran: Ran): string {
     throw new Error(`expected one document URL on stdout (exit ${ran.exitCode}):\n${ran.stdout}\n${ran.stderr}`);
   return id;
 }
+
+export function expectFailure(ran: Ran, stderr: string): void {
+  expect({ exitCode: ran.exitCode, stderr: ran.stderr }).toEqual({ exitCode: 1, stderr });
+}
+
 export async function withWorld<T>(body: (world: World) => Promise<T>): Promise<T> {
   const world = new World();
   try {

@@ -102,6 +102,14 @@ By default each run creates a new document in an `md2gd` folder in your Drive an
 md2gd docs/schema.md --folder https://drive.google.com/drive/folders/1QzE1-xPWzbF…
 ```
 
+md2gd exits 0 on success, 1 on a failure and 2 on a usage error. A failure prints two lines on stderr: the cause with a stable code a script can branch on, then what to do about it. A failure caused by md2gd itself asks you to file an issue.
+
+```
+$ md2gd note.md --nope
+md2gd: unknown option: --nope [usage]
+resolve: md2gd --help
+```
+
 ## Cross-document links
 
 When you mirror a set of Markdown docs to Google Docs, the relative links between them (`[reference](reference/api.md)`, `[guide](../guide.md)`) would be dead in the output — a Doc can't follow a `.md` path — so md2gd renders them as plain text. Pass `--links <map.json>` to turn any such link whose target is *also* a mapped doc into a live hyperlink to that doc's Google Doc:

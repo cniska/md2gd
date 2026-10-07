@@ -1,4 +1,5 @@
-import { describe, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { documentIdOf, expectFailure, withWorld } from "./support/world";
 
 describe("re-rendering into an existing doc", () => {
   test.todo("AC-9 --update on a doc md2gd created re-renders it at the same URL to match a fresh create", () => {});
@@ -20,14 +21,41 @@ describe("cross-document links", () => {
 });
 
 describe("unreadable update targets", () => {
-  test.todo("AC-12 --update on a wrong id exits non-zero with an actionable message and changes nothing", () => {});
+  test("AC-12 --update on a wrong id exits non-zero with an actionable message and changes nothing", async () => {
+    await withWorld(async (world) => {
+      await world.init();
+      const input = world.write("note.md", "# Note\n");
+
+      const refused = await world.run([input, "--update", "missingDocId1234567890"]);
+
+      expect(refused.stdout).toBe("");
+      expectFailure(
+        refused,
+        "md2gd: cannot open document missingDocId1234567890 (404 NOT_FOUND) [document_inaccessible]\nresolve: check the doc URL or id and that you can edit it\n",
+      );
+      expectFailure(
+        await world.run([input, "--update"]),
+        `md2gd: no document remembered for ${input} [no_document_remembered]\nresolve: md2gd ${input} --update <url|id>\n`,
+      );
+    });
+  });
   test.todo("AC-12 --update on a doc without permission exits non-zero with an actionable message and changes nothing", () => {});
   test.todo("AC-12 --update on a trashed doc exits non-zero with an actionable message and changes nothing", () => {});
 });
 
 describe("file to doc mapping", () => {
   test.todo("AC-13 after a create, --update with no argument updates that doc", () => {});
-  test.todo("AC-13 --update <url|id> on a doc md2gd did not create adopts it for a later no-argument --update", () => {});
+  test("AC-13 --update <url|id> on a doc md2gd did not create adopts it for a later no-argument --update", async () => {
+    await withWorld(async (world) => {
+      await world.init();
+      const id = world.google.addDocument({ name: "Hand made" });
+      const input = world.write("note.md", "# Note\n");
+      const url = `https://docs.google.com/document/d/${id}/edit`;
+
+      expect(documentIdOf(await world.run([input, "--update", url]))).toBe(id);
+      expect(documentIdOf(await world.run([input, "--update"]))).toBe(id);
+    });
+  });
   test.todo("AC-13 a plain run with a mapping creates a new doc and prints a hint naming the earlier one", () => {});
   test.todo("AC-13 a mapping whose doc is gone fails with a clear error and creates nothing", () => {});
 });

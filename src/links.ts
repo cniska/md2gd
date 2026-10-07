@@ -2,7 +2,7 @@ import { dirname, resolve } from "node:path";
 import type { Link, Root } from "mdast";
 import { z } from "zod";
 
-export const LinkMapSchema = z.record(z.string(), z.string().min(1));
+export const LinkMapSchema = z.record(z.string(), z.string().min(1)).readonly();
 export type LinkMap = z.infer<typeof LinkMapSchema>;
 
 export interface LinkStats {

@@ -21,6 +21,15 @@ function recorder(responses: unknown[]): { calls: Call[]; fetchFn: FetchFn } {
 
 const token = () => Promise.resolve("tok");
 
+const failing =
+  (status: number, body: unknown): FetchFn =>
+  () =>
+    Promise.resolve(new Response(JSON.stringify(body), { status }));
+const driveError = (status: number, reason: string) => ({
+  error: { code: status, message: "m", errors: [{ message: "m", domain: "global", reason }] },
+});
+const docsError = (status: number, name: string) => ({ error: { code: status, message: "m", status: name } });
+
 describe("documentUrl", () => {
   test("builds an edit url from the document id", () => {
     expect(documentUrl("abc123")).toBe("https://docs.google.com/document/d/abc123/edit");
@@ -59,11 +68,26 @@ describe("GoogleDocsClient.createDocument", () => {
     expect(calls[0]).toMatchObject({ method: "POST", body: { parents: ["chosen-folder"] } });
   });
 
-  test("wraps a failure creating in a given folder with an actionable message", async () => {
-    const fetchFn: FetchFn = () =>
-      Promise.resolve(new Response(JSON.stringify({ error: { message: "File not found: x." } }), { status: 404 }));
-    const client = new GoogleDocsClient({ getToken: token, fetchFn });
-    await expect(client.createDocument("T", "bad-folder")).rejects.toThrow(/cannot create in folder bad-folder/);
+  for (const [status, reason] of [
+    [404, "notFound"],
+    [403, "insufficientFilePermissions"],
+    [400, "invalidParent"],
+  ] as const)
+    test(`refuses a create into a folder answered ${status} ${reason} as an unwritable folder`, async () => {
+      const client = new GoogleDocsClient({ getToken: token, fetchFn: failing(status, driveError(status, reason)) });
+      await expect(client.createDocument("T", "bad-folder")).rejects.toThrow(
+        expect.objectContaining({
+          code: "folder_unwritable",
+          meta: expect.objectContaining({ folderId: "bad-folder", status, reason }),
+        }),
+      );
+    });
+
+  test("leaves a create's other client error a fault", async () => {
+    const client = new GoogleDocsClient({ getToken: token, fetchFn: failing(400, driveError(400, "badRequest")) });
+    await expect(client.createDocument("T", "folder-1")).rejects.toThrow(
+      expect.objectContaining({ code: "google_rejected", kind: "fault" }),
+    );
   });
 });
 
@@ -78,16 +102,38 @@ describe("GoogleDocsClient.moveDocument", () => {
     expect(calls[1]?.url).toContain("removeParents=oldFolder");
   });
 
-  test("wraps a move into an inaccessible folder with an actionable message", async () => {
+  test("refuses a move into an inaccessible folder as an unwritable folder", async () => {
     let call = 0;
     const fetchFn: FetchFn = () => {
       call++;
       const status = call === 1 ? 200 : 404;
-      const body = call === 1 ? { parents: ["old"] } : { error: { message: "File not found." } };
+      const body = call === 1 ? { parents: ["old"] } : driveError(404, "notFound");
       return Promise.resolve(new Response(JSON.stringify(body), { status }));
     };
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
-    await expect(client.moveDocument("doc9", "bad")).rejects.toThrow(/cannot move into folder bad/);
+    await expect(client.moveDocument("doc9", "bad")).rejects.toThrow(
+      expect.objectContaining({
+        code: "folder_unwritable",
+        meta: expect.objectContaining({ folderId: "bad", status: 404, reason: "notFound" }),
+      }),
+    );
+  });
+
+  test("refuses a move into a folder that is not one as an unwritable folder", async () => {
+    let call = 0;
+    const fetchFn: FetchFn = () => {
+      call++;
+      const status = call === 1 ? 200 : 400;
+      const body = call === 1 ? { parents: ["old"] } : driveError(400, "invalidParent");
+      return Promise.resolve(new Response(JSON.stringify(body), { status }));
+    };
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await expect(client.moveDocument("doc9", "aDoc")).rejects.toThrow(
+      expect.objectContaining({
+        code: "folder_unwritable",
+        meta: expect.objectContaining({ folderId: "aDoc", status: 400, reason: "invalidParent" }),
+      }),
+    );
   });
 });
 
@@ -124,10 +170,64 @@ describe("GoogleDocsClient.batchUpdate", () => {
     expect(calls[0]).toMatchObject({ method: "POST", body: { requests: [{ insertText: { text: "x" } }] } });
   });
 
-  test("throws on a non-ok response", async () => {
+  test("refuses a denied write with its status and no reason when the body has none", async () => {
     const fetchFn: FetchFn = () => Promise.resolve(new Response("nope", { status: 403 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
-    await expect(client.batchUpdate("d", [])).rejects.toThrow(/failed \(403\)/);
+    await expect(client.batchUpdate("d", [])).rejects.toThrow(
+      expect.objectContaining({
+        code: "google_denied",
+        meta: expect.objectContaining({
+          method: "POST",
+          path: "/v1/documents/d:batchUpdate",
+          status: 403,
+          reason: null,
+        }),
+      }),
+    );
+  });
+
+  test("names a request Google rejects as malformed a fault in md2gd", async () => {
+    const client = new GoogleDocsClient({ getToken: token, fetchFn: failing(400, docsError(400, "INVALID_ARGUMENT")) });
+    await expect(client.batchUpdate("d", [])).rejects.toThrow(
+      expect.objectContaining({ code: "google_rejected", kind: "fault" }),
+    );
+  });
+});
+
+describe("GoogleDocsClient.getDocument", () => {
+  test("refuses a document Drive cannot find as inaccessible", async () => {
+    const client = new GoogleDocsClient({ getToken: token, fetchFn: failing(404, driveError(404, "notFound")) });
+    await expect(client.getDocument("gone")).rejects.toThrow(
+      expect.objectContaining({
+        code: "document_inaccessible",
+        meta: expect.objectContaining({ documentId: "gone", status: 404, reason: "notFound" }),
+      }),
+    );
+  });
+
+  test("refuses a document the Docs API cannot find as inaccessible", async () => {
+    const client = new GoogleDocsClient({ getToken: token, fetchFn: failing(404, docsError(404, "NOT_FOUND")) });
+    await expect(client.getDocument("gone")).rejects.toThrow(
+      expect.objectContaining({
+        code: "document_inaccessible",
+        meta: expect.objectContaining({ documentId: "gone", status: 404, reason: "NOT_FOUND" }),
+      }),
+    );
+  });
+
+  test("refuses a document the user may not read as inaccessible", async () => {
+    const client = new GoogleDocsClient({
+      getToken: token,
+      fetchFn: failing(403, docsError(403, "PERMISSION_DENIED")),
+    });
+    await expect(client.getDocument("theirs")).rejects.toThrow(
+      expect.objectContaining({ code: "document_inaccessible", meta: expect.objectContaining({ status: 403 }) }),
+    );
+  });
+
+  test("leaves a sign-in Google no longer accepts as it is", async () => {
+    const client = new GoogleDocsClient({ getToken: token, fetchFn: failing(401, docsError(401, "UNAUTHENTICATED")) });
+    await expect(client.getDocument("d")).rejects.toThrow(expect.objectContaining({ code: "google_unauthenticated" }));
   });
 });
 
@@ -148,7 +248,7 @@ describe("GoogleDocsClient retries", () => {
     const fetchFn: FetchFn = () => Promise.resolve(new Response(body, { status: 403 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn, sleep: noWait });
     await expect(client.createDocument("T", "folder-1")).rejects.toThrow(
-      "md2gd: Google API rate limit reached — wait a minute and try again",
+      expect.objectContaining({ code: "rate_limited", meta: expect.objectContaining({ status: 403 }) }),
     );
   });
 
@@ -156,24 +256,45 @@ describe("GoogleDocsClient retries", () => {
     const fetchFn: FetchFn = () => Promise.resolve(new Response("{}", { status: 429 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn, sleep: noWait });
     await expect(client.batchUpdate("doc", [])).rejects.toThrow(
-      "md2gd: Google API rate limit reached — wait a minute and try again",
+      expect.objectContaining({ code: "rate_limited", meta: expect.objectContaining({ status: 429 }) }),
     );
   });
 });
 
 describe("GoogleDocsClient responses", () => {
+  test("names a created file with an empty id a fault, rather than remembering it", async () => {
+    const { fetchFn } = recorder([{ id: "" }]);
+    const client = new GoogleDocsClient({ getToken: token, fetchFn });
+    await expect(client.createDocument("T", "folder-1")).rejects.toThrow(
+      expect.objectContaining({ code: "google_response_invalid", kind: "fault" }),
+    );
+  });
+
   test("rejects a response missing what md2gd reads, with a clear message", async () => {
     const { fetchFn } = recorder([{ files: [{ id: "folder" }] }, { name: "no id here" }]);
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
     await expect(client.createDocument("T")).rejects.toThrow(
-      "md2gd: unexpected response from Google API POST /drive/v3/files (id:",
+      expect.objectContaining({
+        code: "google_response_invalid",
+        kind: "fault",
+        meta: {
+          method: "POST",
+          path: "/drive/v3/files",
+          problem: "id: Invalid input: expected string, received undefined",
+        },
+      }),
     );
   });
 
   test("reports a body that isn't JSON as an unexpected response, not a parse crash", async () => {
     const fetchFn: FetchFn = () => Promise.resolve(new Response("<html>oops</html>", { status: 200 }));
     const client = new GoogleDocsClient({ getToken: token, fetchFn });
-    await expect(client.getDocument("d")).rejects.toThrow("md2gd: unexpected response from Google API GET");
+    await expect(client.getDocument("d")).rejects.toThrow(
+      expect.objectContaining({
+        code: "google_response_invalid",
+        meta: expect.objectContaining({ problem: "not JSON" }),
+      }),
+    );
   });
 
   test("accepts a real-shaped document, whose default values the API leaves out", async () => {
