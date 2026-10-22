@@ -36,10 +36,6 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run test:acceptance
 
-  # Compiling + smoke-testing the binary is a nightly job, not a per-PR gate:
-  # release.yml rebuilds and smokes all targets at tag time, so a broken binary
-  # can never ship -- the nightly just surfaces build breakage within a day
-  # instead of paying compile minutes (macOS bills ~10x) on every push and PR.
   compile:
     name: Compile (${{ matrix.target }})
     if: github.event_name == 'schedule'
