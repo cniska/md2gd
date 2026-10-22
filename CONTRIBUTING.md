@@ -11,7 +11,7 @@ Thanks for your interest in md2gd.
 
 - Read `SPEC.md` first — it is the source of requirements (what, not how) — and `AGENTS.md` for conventions.
 - Build in thin vertical slices; drive conversion changes test-first.
-- `bun run check` (lint → typecheck → tests) must be green. The pre-commit hook formats the commit with `bun run format`, refuses an added comment and runs the check; CI runs the check and the comment and commit-subject gates on every push. The per-target compile and `scripts/smoke-compiled.sh` smoke test (linux-x64, darwin-arm64) run nightly instead of on every push, since macOS minutes bill about 10x and `release.yml` rebuilds and smokes every target at tag time.
+- `bun run check` (lint → typecheck → tests) must be green. The pre-commit hook formats the commit with `bun run format`, refuses an added comment and an action not pinned to a commit SHA, and runs the check; CI runs the check and the comment, commit-subject and pinned-actions gates on every push. The per-target compile and `scripts/smoke-compiled.sh` smoke test (linux-x64, darwin-arm64) run nightly instead of on every push, since macOS minutes bill about 10x and `release.yml` rebuilds and smokes every target at tag time.
 
 ## Tests
 
@@ -25,4 +25,4 @@ Thanks for your interest in md2gd.
 
 ## Pull requests
 
-- Keep the `Check`, `CI`, `Commits` and `No comments` workflows green and cover the change with tests. Describe what changed and why.
+- Keep the `Check`, `CI`, `Commits`, `No comments` and `Pinned actions` workflows green and cover the change with tests. Describe what changed and why.
