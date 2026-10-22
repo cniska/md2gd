@@ -1,7 +1,4 @@
 #!/usr/bin/env sh
-# Download the latest prebuilt md2gd binary for this platform, verify its
-# checksum, and install it to ~/.local/bin. Usage:
-#   curl -fsSL https://raw.githubusercontent.com/cniska/md2gd/main/scripts/install.sh | sh
 set -eu
 
 REPO="cniska/md2gd"
