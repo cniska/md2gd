@@ -5,13 +5,13 @@ Thanks for your interest in md2gd.
 ## Setup
 
 - [mise](https://mise.jdx.dev), then `mise install` for the Bun version pinned in `mise.toml`
-- `bun install`
+- `bun install`, whose `prepare` script points git at the hooks in `.githooks/`
 
 ## Workflow
 
 - Read `SPEC.md` first — it is the source of requirements (what, not how) — and `AGENTS.md` for conventions.
 - Build in thin vertical slices; drive conversion changes test-first.
-- Run `bun run check` (lint → typecheck → tests) before every commit. It must be green.
+- `bun run check` (lint → typecheck → tests) must be green. The pre-commit hook formats the commit with `bun run format`, refuses an added comment and runs the check; CI runs the check and the comment and commit-subject gates on every push.
 
 ## Tests
 
@@ -21,7 +21,7 @@ Thanks for your interest in md2gd.
 
 ## Commits
 
-- Conventional commits: `type(scope): description`, single-line, at most 50 characters.
+- Conventional commits: `type(scope): description`, with type `feat`, `fix`, `refactor`, `docs`, `test` or `chore`, single-line, at most 50 characters, ASCII. The `commit-msg` hook refuses any other subject.
 
 ## Pull requests
 

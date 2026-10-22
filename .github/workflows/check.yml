@@ -1,4 +1,3 @@
-# dim-gate:1
 name: Check
 
 on:
@@ -19,4 +18,4 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: jdx/mise-action@v5
       - run: bun install --frozen-lockfile --ignore-scripts
-      - run: bun run check
+      - run: .githooks/pre-commit.d/check

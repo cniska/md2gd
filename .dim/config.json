@@ -1,4 +1,0 @@
-{
-  "ship": "default-branch",
-  "gates": ["commit-subject", "check", "no-comments"]
-}

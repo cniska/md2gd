@@ -190,7 +190,7 @@ rm -rf ~/.config/md2gd         # full reset
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Run `bun run check` before every commit.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). `bun install` wires the git hooks that format, check and judge each commit.
 
 ## License
 

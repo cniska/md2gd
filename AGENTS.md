@@ -16,7 +16,8 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 
 - Run locally: `bun run start -- <file.md>`.
 - Compile a standalone binary: `bun build --compile src/cli.ts --outfile md2gd`.
-- Check (lint → typecheck → test, offline): `bun run check`. The dependency audit (`bun run audit`) needs the network, so it runs only in CI (`ci.yml`) and at release.
+- Start a task in its own worktree: `agent-worktree create <branch>` from the checkout; `.worktree-hooks/setup` trusts `mise.toml`, installs Bun and runs `bun install`, whose `prepare` script wires the hooks in `.githooks/`.
+- Check (lint → typecheck → test, offline): `bun run check`. `.githooks/pre-commit.d/check` runs it on every commit and in CI (`check.yml`), after the agent-gates `format` step (`bun run format`) and beside its `no-comments` gate. The dependency audit (`bun run audit`) needs the network, so it runs only in CI (`ci.yml`) and at release.
 - Prove the spec's criteria against a scripted Google: `bun run test:acceptance` (compiles the binary first).
 - See a change in a real Google Doc: `bun run render -- <file.md>`; the recipe (credentials, evidence, cleanup) is `.claude/skills/md2gd-verify-doc/SKILL.md`. Run it after conversion, styling, or executor changes.
 - Cut a release: bump `version` in `package.json`, commit `chore: release vX.Y.Z`, and push a matching `vX.Y.Z` tag — `.github/workflows/release.yml` builds the binaries, writes their checksums, and publishes the GitHub release. There is no local release script.
@@ -29,7 +30,7 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 - Flat `src/`, colocated `*.test.ts`. No re-export layers.
 - Factory naming: `create*`. Prefer direct `export const` over alias + `export { ... }`.
 - `switch` exhaustiveness: a `default` branch with an `unreachable`/never check when applicable.
-- Code carries no comments: a why goes into a name, a test, or `docs/architecture.md`. A tool directive (a lint or type suppression) carries its reason on its own line. The no-comments gate holds it on commit and in CI.
+- Code carries no comments: a why goes into a name, a test, or `docs/architecture.md`. A suppression (a lint or type directive) is refused; a setting that must stay goes in the tool's config (`biome.json`, `tsconfig.json`). The no-comments gate holds it on commit, on push and in CI.
 
 ## Style
 
@@ -46,11 +47,11 @@ Read [SPEC.md](SPEC.md) before working on anything — it is the source of truth
 
 ## Commits
 
-- `type(scope): description` — types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`. Single-line subject, no body, at most 50 characters, ASCII only; `.githooks/commit-msg` holds it. No issue references or spec IDs in the subject.
+- `type(scope): description` — types: `feat`, `fix`, `refactor`, `docs`, `test`, `chore`. Single-line subject, no body, at most 50 characters, ASCII only; agent-gates' `commit-subject` gate holds it on commit, on push and in CI (`commits.yml`). No issue references or spec IDs in the subject.
 
 ## Process
 
-- Commit only when explicitly requested, and push directly to `main`; no feature branches or pull requests.
+- Commit only when explicitly requested, and push directly to `main`; each task on a topic branch in its own worktree, fast-forwarded onto `main` once reviewed; no pull requests.
 - Clean up after yourself once work lands: delete the branches, clones, and scratch files you created.
 
 ## Docs
