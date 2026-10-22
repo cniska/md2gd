@@ -25,4 +25,4 @@ Thanks for your interest in md2gd.
 
 ## Pull requests
 
-- Keep `verify` green and cover the change with tests. Describe what changed and why.
+- Keep the `Check`, `CI`, `Commits` and `No comments` workflows green and cover the change with tests. Describe what changed and why.
